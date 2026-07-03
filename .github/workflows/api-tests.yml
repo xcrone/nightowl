@@ -1,0 +1,73 @@
+name: API Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['api/**', 'agent/**', '.github/workflows/api-tests.yml']
+  pull_request:
+    branches: [main]
+    paths: ['api/**', 'agent/**', '.github/workflows/api-tests.yml']
+
+defaults:
+  run:
+    working-directory: api
+
+jobs:
+  test:
+    name: Feature Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nightowl
+          POSTGRES_USER: nightowl
+          POSTGRES_PASSWORD: nightowl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, pdo_pgsql, pcntl, posix, zlib
+          coverage: none
+
+      # api/ consumes agent/ via a local path repository (composer.json:
+      # repositories -> { type: path, url: ../agent }) — no separate install
+      # step needed for agent/, composer resolves its dependencies into
+      # api/'s own vendor/ directly.
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Create the nightowl schema
+        env:
+          NIGHTOWL_DB_HOST: 127.0.0.1
+          NIGHTOWL_DB_PORT: 5432
+          NIGHTOWL_DB_DATABASE: nightowl
+          NIGHTOWL_DB_USERNAME: nightowl
+          NIGHTOWL_DB_PASSWORD: nightowl
+        run: php artisan nightowl:migrate
+
+      - name: Run tests
+        env:
+          NIGHTOWL_DB_HOST: 127.0.0.1
+          NIGHTOWL_DB_PORT: 5432
+          NIGHTOWL_DB_DATABASE: nightowl
+          NIGHTOWL_DB_USERNAME: nightowl
+          NIGHTOWL_DB_PASSWORD: nightowl
+        run: php artisan test

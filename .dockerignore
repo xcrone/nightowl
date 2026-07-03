@@ -1,0 +1,8 @@
+.git
+**/vendor
+**/node_modules
+**/.env
+api/database/database.sqlite
+web/dist
+agent/tests
+app

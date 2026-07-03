@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Docker overrides
+docker-compose.override.yml
+
+# Env files at the repo root (subprojects have their own .gitignore)
+.env
+.env.*
+!.env.example
