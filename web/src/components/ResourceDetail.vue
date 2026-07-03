@@ -138,9 +138,9 @@ defineExpose({ state })
         <blockquote class="m-0 border-t border-gray-100 dark:border-gray-800">
           <pre
             v-if="!field.json || rawView[field.key]"
-            class="overflow-x-auto whitespace-pre-wrap break-words p-4 text-xs text-gray-900 dark:text-gray-100"
+            class="max-h-96 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-words p-4 text-xs text-gray-900 dark:text-gray-100"
           >{{ field.raw }}</pre>
-          <pre v-else class="overflow-x-auto p-4 font-mono text-xs text-gray-900 dark:text-gray-100"><JsonViewer :data="field.json" /></pre>
+          <pre v-else class="max-h-96 overflow-x-auto overflow-y-auto p-4 font-mono text-xs text-gray-900 dark:text-gray-100"><JsonViewer :data="field.json" /></pre>
         </blockquote>
       </details>
 

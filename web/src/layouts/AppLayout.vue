@@ -37,7 +37,7 @@ function cycleTheme() {
       </nav>
     </aside>
 
-    <div class="flex-1">
+    <div class="min-w-0 flex-1">
       <header class="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3 dark:border-gray-700 dark:bg-gray-900">
         <span class="text-sm text-gray-500 dark:text-gray-400">{{ route.path }}</span>
         <div class="flex items-center gap-3 text-sm">
