@@ -1,8 +1,9 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import api from '../services/api'
 import { resources } from '../resourceConfig'
 import { formatValue } from '../utils/format'
+import JsonViewer from './JsonViewer.vue'
 
 const props = defineProps({
   resource: { type: String, required: true },
@@ -24,7 +25,29 @@ const state = reactive({
 const LONG_VALUE_THRESHOLD = 120
 
 const shortFields = computed(() => fieldEntries(false))
-const longFields = computed(() => fieldEntries(true))
+const longFields = computed(() =>
+  fieldEntries(true).map(([key, value]) => {
+    const json = parseJson(value)
+    return { key, value, json, raw: json ? JSON.stringify(json, null, 2) : value }
+  }),
+)
+
+// Per-field UI state, keyed by field name — kept outside the `longFields`
+// computed so toggling one field's view doesn't get reset by re-derivation.
+const rawView = reactive({})
+const copiedKey = ref(null)
+
+function toggleRaw(key) {
+  rawView[key] = !rawView[key]
+}
+
+async function copyField(field) {
+  await navigator.clipboard.writeText(field.raw)
+  copiedKey.value = field.key
+  setTimeout(() => {
+    if (copiedKey.value === field.key) copiedKey.value = null
+  }, 1500)
+}
 
 function fieldEntries(long) {
   if (!state.record) return []
@@ -33,6 +56,21 @@ function fieldEntries(long) {
     const isLong = typeof value === 'string' && value.length > LONG_VALUE_THRESHOLD
     return long ? isLong : !isLong
   })
+}
+
+// Telemetry fields like `headers`/`payload`/`context` are stored as JSON
+// text columns and come back from the API as raw JSON strings — parse them
+// so they can render as a collapsible tree instead of a single unbroken line.
+function parseJson(value) {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed !== null && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 async function load() {
@@ -76,9 +114,34 @@ defineExpose({ state })
         </div>
       </dl>
 
-      <details v-for="[key, value] in longFields" :key="key" class="mt-3 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-        <summary class="cursor-pointer px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">{{ key }}</summary>
-        <pre class="overflow-x-auto whitespace-pre-wrap break-words border-t border-gray-100 p-4 text-xs text-gray-900 dark:border-gray-800 dark:text-gray-100">{{ value }}</pre>
+      <details v-for="field in longFields" :key="field.key" class="mt-3 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+        <summary class="flex items-center justify-between gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span class="cursor-pointer">{{ field.key }}</span>
+          <span class="flex items-center gap-3 text-xs font-normal">
+            <button
+              v-if="field.json"
+              type="button"
+              class="text-gray-500 hover:text-gray-700 hover:underline dark:text-gray-400 dark:hover:text-gray-200"
+              @click.prevent="toggleRaw(field.key)"
+            >
+              {{ rawView[field.key] ? 'Tree' : 'Raw' }}
+            </button>
+            <button
+              type="button"
+              class="text-gray-500 hover:text-gray-700 hover:underline dark:text-gray-400 dark:hover:text-gray-200"
+              @click.prevent="copyField(field)"
+            >
+              {{ copiedKey === field.key ? 'Copied' : 'Copy' }}
+            </button>
+          </span>
+        </summary>
+        <blockquote class="m-0 border-t border-gray-100 dark:border-gray-800">
+          <pre
+            v-if="!field.json || rawView[field.key]"
+            class="overflow-x-auto whitespace-pre-wrap break-words p-4 text-xs text-gray-900 dark:text-gray-100"
+          >{{ field.raw }}</pre>
+          <pre v-else class="overflow-x-auto p-4 font-mono text-xs text-gray-900 dark:text-gray-100"><JsonViewer :data="field.json" /></pre>
+        </blockquote>
       </details>
 
       <slot name="after" :record="state.record" />
