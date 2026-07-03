@@ -32,6 +32,8 @@ evolve independently (auth, deployment, scaling) without touching the agent.
 ## Local development
 
 ```bash
+cp .env.example .env                      # root — shared creds for docker-compose
+
 docker compose up -d postgres pgbouncer   # Postgres + PgBouncer only
 cd agent && composer install && vendor/bin/phpunit --testsuite Unit
 
@@ -42,10 +44,32 @@ php artisan migrate                       # api's own users/sessions tables (sql
 php artisan serve --port=8001             # or 8000, if nothing else is using it
 
 cd web && pnpm install
+cp .env.example .env
 pnpm dev                                  # http://localhost:5173
 ```
 
-Or the whole stack via Docker: `docker compose up -d --remove-orphans`
+Or the whole stack via Docker:
+
+```bash
+cp .env.example .env                      # first time only
+docker compose up -d --remove-orphans
+```
+
 (postgres, pgbouncer, the `agent` daemon, the `api` JSON API, and `web`).
+
+### Environment files
+
+There's no single shared `.env` — Laravel and Vite each expect one in their
+own project root, so each subproject keeps its own:
+
+| File          | Read by              | Purpose                                                                                                                                                              |
+| ------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.env` (root) | `docker-compose.yml`  | nightowl DB credentials, shared `APP_KEY`, dev URLs — substituted into the `postgres`/`agent`/`api` services so they're not hardcoded in three places.                  |
+| `api/.env`    | Laravel (`api/`)       | Full app config — app key, sessions, and (for host-side dev outside Docker) `NIGHTOWL_DB_*` pointed directly at Postgres on port 5433.                                  |
+| `web/.env`    | Vite (`web/`)          | `VITE_API_URL` — where the SPA sends its API requests.                                                                                                                   |
+| *(none)*      | `agent/`               | It's a Composer package, not an app, so it has no `.env`. Integration/System tests read `NIGHTOWL_TEST_DB_*` via `getenv()` (defaults match docker-compose's Postgres); at runtime its DB config comes from whichever app consumes it (`api/`'s `NIGHTOWL_DB_*`). |
+
+Each file above (except agent/, which has none) has a tracked
+`.env.example` — copy it to `.env` before first run.
 
 See [CLAUDE.md](CLAUDE.md) for CI details and more context on the migration.

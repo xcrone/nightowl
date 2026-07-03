@@ -29,6 +29,8 @@ evolve independently (auth, deployment, scaling) without touching the agent.
 ## Local development
 
 ```bash
+cp .env.example .env                      # root — shared creds for docker-compose
+
 docker compose up -d postgres pgbouncer   # Postgres + PgBouncer only
 cd agent && composer install && vendor/bin/phpunit --testsuite Unit
 
@@ -39,11 +41,21 @@ php artisan migrate                       # api's own users/sessions tables (sql
 php artisan serve --port=8001             # or 8000, if nothing else is using it
 
 cd web && pnpm install
+cp .env.example .env
 pnpm dev                                  # http://localhost:5173
 ```
 
-Or the whole stack via Docker: `docker compose up -d --remove-orphans`
+Or the whole stack via Docker:
+
+```bash
+cp .env.example .env                      # first time only
+docker compose up -d --remove-orphans
+```
+
 (postgres, pgbouncer, the `agent` daemon, the `api` JSON API, and `web`).
+
+See [README.md](README.md)'s "Environment files" section for what each of
+the four `.env` files is for and why they aren't unified into one.
 Note: `docker/Dockerfile`'s build context is the **repo root**, not `api/`
 — it needs both `agent/` and `api/` in context so `composer install` (run
 inside the image, not copied from the host) creates a symlink that actually

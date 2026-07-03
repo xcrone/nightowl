@@ -1,30 +1,24 @@
 # NightOwl monorepo — PostgreSQL + PgBouncer + agent daemon + api + web
 #
 # Usage:
+#   cp .env.example .env   # first time only — shared nightowl DB creds/APP_KEY
 #   docker compose up -d
 #
-# .env config (host-side, only needed if you run things outside Docker too):
-#   NIGHTOWL_DB_HOST=127.0.0.1
-#   NIGHTOWL_DB_PORT=6432            # PgBouncer (pooled) — use for agent
-#   NIGHTOWL_DB_DATABASE=nightowl
-#   NIGHTOWL_DB_USERNAME=nightowl
-#   NIGHTOWL_DB_PASSWORD=nightowl
-#   NIGHTOWL_DRAIN_WORKERS=4         # Parallel drain workers
+# The nightowl DB credentials, APP_KEY, and dev URLs below come from this
+# directory's .env (Compose loads it automatically for variable
+# substitution — see .env.example). Fixed, non-secret dev/POC defaults;
+# replace them in .env for anything shared or long-lived.
 #
 # Direct PostgreSQL (bypass PgBouncer):
 #   psql -h 127.0.0.1 -p 5433 -U nightowl -d nightowl
-#
-# api/'s own APP_KEY below is a fixed dev-only value baked into this
-# compose file (not secret-managed) — fine for local/POC use, replace it
-# for anything shared or long-lived.
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: nightowl
-      POSTGRES_USER: nightowl
-      POSTGRES_PASSWORD: nightowl
+      POSTGRES_DB: ${NIGHTOWL_DB_DATABASE:-nightowl}
+      POSTGRES_USER: ${NIGHTOWL_DB_USERNAME:-nightowl}
+      POSTGRES_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
@@ -64,15 +58,15 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     environment:
-      APP_KEY: base64:lOO9am44Du77Je2OPn8qquhmhc05wmAbsOoCvT6Bzd8=
+      APP_KEY: ${NIGHTOWL_APP_KEY:-base64:lOO9am44Du77Je2OPn8qquhmhc05wmAbsOoCvT6Bzd8=}
       # Direct to postgres, not pgbouncer: pgbouncer's transaction pooling mode
       # breaks the agent's COPY-based drain writes (SQLSTATE 25P02). Fine for
       # this POC's traffic volume; revisit pgbouncer if/when this scales up.
       NIGHTOWL_DB_HOST: postgres
       NIGHTOWL_DB_PORT: 5432
-      NIGHTOWL_DB_DATABASE: nightowl
-      NIGHTOWL_DB_USERNAME: nightowl
-      NIGHTOWL_DB_PASSWORD: nightowl
+      NIGHTOWL_DB_DATABASE: ${NIGHTOWL_DB_DATABASE:-nightowl}
+      NIGHTOWL_DB_USERNAME: ${NIGHTOWL_DB_USERNAME:-nightowl}
+      NIGHTOWL_DB_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
     ports:
       # 2407 (TCP ingest) stays reachable from adam-app via the shared Docker
       # network regardless of this host-side mapping (container-to-container
@@ -107,8 +101,8 @@ services:
              cd public &&
              exec php -S 0.0.0.0:8000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php"
     environment:
-      APP_KEY: base64:lOO9am44Du77Je2OPn8qquhmhc05wmAbsOoCvT6Bzd8=
-      FRONTEND_URLS: http://localhost:5173
+      APP_KEY: ${NIGHTOWL_APP_KEY:-base64:lOO9am44Du77Je2OPn8qquhmhc05wmAbsOoCvT6Bzd8=}
+      FRONTEND_URLS: ${FRONTEND_URL:-http://localhost:5173}
       SANCTUM_STATEFUL_DOMAINS: localhost:5173
       SESSION_DOMAIN: localhost
       # Via PgBouncer, not direct postgres: this container opens a fresh
@@ -118,9 +112,9 @@ services:
       # is read-mostly traffic, not the agent's COPY-based writes.
       NIGHTOWL_DB_HOST: pgbouncer
       NIGHTOWL_DB_PORT: 5432
-      NIGHTOWL_DB_DATABASE: nightowl
-      NIGHTOWL_DB_USERNAME: nightowl
-      NIGHTOWL_DB_PASSWORD: nightowl
+      NIGHTOWL_DB_DATABASE: ${NIGHTOWL_DB_DATABASE:-nightowl}
+      NIGHTOWL_DB_USERNAME: ${NIGHTOWL_DB_USERNAME:-nightowl}
+      NIGHTOWL_DB_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
     ports:
       # Loopback-only: reachable from this machine, not the rest of the LAN.
       - "127.0.0.1:8000:8000"
@@ -136,7 +130,7 @@ services:
       context: ./web
       dockerfile: ../docker/Dockerfile.web
       args:
-        VITE_API_URL: http://localhost:8000
+        VITE_API_URL: ${API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:5173:4173"
     depends_on:
