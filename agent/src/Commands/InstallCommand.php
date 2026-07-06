@@ -5,7 +5,7 @@ namespace NightOwl\Commands;
 use Illuminate\Console\Command;
 use PDO;
 
-class InstallCommand extends Command
+final class InstallCommand extends Command
 {
     protected $signature = 'nightowl:install';
 

@@ -8,7 +8,7 @@ use NightOwl\Agent\AsyncServer;
 use NightOwl\Agent\PortInUseException;
 use NightOwl\Agent\Server;
 
-class AgentCommand extends Command
+final class AgentCommand extends Command
 {
     protected $signature = 'nightowl:agent
         {--host= : The host to listen on}

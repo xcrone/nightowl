@@ -5,7 +5,7 @@ namespace NightOwl\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
 
-class MigrateCommand extends Command
+final class MigrateCommand extends Command
 {
     protected $signature = 'nightowl:migrate';
 

@@ -9,7 +9,7 @@ use NightOwl\Agent\DrainWorker;
  * Internal command — spawned by nightowl:agent via pcntl_exec() for each drain worker.
  * Not intended to be run directly by users.
  */
-class DrainWorkerCommand extends Command
+final class DrainWorkerCommand extends Command
 {
     protected $signature = 'nightowl:drain-worker
         {--worker-id=0 : Worker ID for multi-worker mode}

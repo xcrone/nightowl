@@ -22,7 +22,7 @@ use NightOwl\Commands\MigrateCommand;
 use NightOwl\Commands\PruneCommand;
 use NightOwl\Support\MultiIngest;
 
-class NightOwlAgentServiceProvider extends ServiceProvider
+final class NightOwlAgentServiceProvider extends ServiceProvider
 {
     public function register(): void
     {

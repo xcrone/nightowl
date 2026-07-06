@@ -822,9 +822,12 @@ final class AlertNotifier
         $username = $config['username'] ?? '';
         $password = $config['password'] ?? '';
         $encryption = $config['encryption'] ?? 'tls';
-        $fromAddress = $config['from_address'] ?? '';
-        $fromName = $config['from_name'] ?? 'NightOwl';
-        $toAddresses = $config['to_addresses'] ?? [];
+        $fromAddress = $this->sanitizeHeader((string) ($config['from_address'] ?? ''));
+        $fromName = $this->sanitizeHeader((string) ($config['from_name'] ?? 'NightOwl'));
+        $toAddresses = array_map(
+            fn ($address) => $this->sanitizeHeader((string) $address),
+            $config['to_addresses'] ?? [],
+        );
 
         if ($host === '' || $fromAddress === '' || empty($toAddresses)) {
             return;
@@ -835,7 +838,6 @@ final class AlertNotifier
 
         $subjectPrefix = $this->headerStyle($prefix, $issueType)['label'];
         $subject = $this->sanitizeHeader("[{$appName}] {$subjectPrefix}: {$name}");
-        $fromName = $this->sanitizeHeader($fromName);
 
         $body = EmailTemplate::renderIssue($appName, $group, $issueType, $this->frontendUrl);
 

@@ -5,7 +5,7 @@ namespace NightOwl\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-class ClearCommand extends Command
+final class ClearCommand extends Command
 {
     protected $signature = 'nightowl:clear
         {--force : Skip confirmation}';

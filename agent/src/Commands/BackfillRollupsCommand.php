@@ -9,7 +9,7 @@ use NightOwl\Support\QueryHistogram;
 use NightOwl\Support\RollupSpec;
 use NightOwl\Support\RollupSpecs;
 
-class BackfillRollupsCommand extends Command
+final class BackfillRollupsCommand extends Command
 {
     protected $signature = 'nightowl:backfill-rollups
         {--since= : Start datetime (default: earliest source row)}

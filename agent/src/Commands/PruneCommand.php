@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use NightOwl\Support\RollupSpecs;
 
-class PruneCommand extends Command
+final class PruneCommand extends Command
 {
     protected $signature = 'nightowl:prune
         {--days= : Number of days to retain raw telemetry}
