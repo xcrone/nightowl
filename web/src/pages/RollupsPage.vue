@@ -15,17 +15,32 @@ const theme = useThemeStore()
 const state = reactive({
   type: 'queries',
   rows: [],
+  allRows: [],
   loading: false,
+  search: '',
 })
 
 async function load() {
   state.loading = true
   const { data } = await api.get(`/api/rollups/${state.type}`)
-  state.rows = data.data.slice(0, 15)
+  state.allRows = data.data
+  applySearch()
   state.loading = false
 }
 
+// Client-side only: the full rollup array is already fetched (not
+// paginated server-side), so filter it before slicing to the top-15
+// display so search can reach beyond that default view.
+function applySearch() {
+  const q = state.search.trim().toLowerCase()
+  const source = q
+    ? state.allRows.filter((r) => (r.label ?? r.key ?? r.group_hash ?? '').toLowerCase().includes(q))
+    : state.allRows
+  state.rows = source.slice(0, 15)
+}
+
 watch(() => state.type, load, { immediate: true })
+watch(() => state.search, applySearch)
 
 function chartData() {
   return {
@@ -60,14 +75,22 @@ function chartOptions() {
 
 <template>
   <div>
-    <div class="mb-4 flex items-center justify-between">
+    <div class="mb-4 flex items-center justify-between gap-2">
       <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Trends</h1>
-      <select
-        v-model="state.type"
-        class="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-      >
-        <option v-for="type in TYPES" :key="type" :value="type">{{ type }}</option>
-      </select>
+      <div class="flex items-center gap-2">
+        <input
+          v-model="state.search"
+          type="text"
+          placeholder="Search…"
+          class="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+        />
+        <select
+          v-model="state.type"
+          class="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+        >
+          <option v-for="type in TYPES" :key="type" :value="type">{{ type }}</option>
+        </select>
+      </div>
     </div>
 
     <div v-if="state.loading" class="text-gray-400 dark:text-gray-500">Loading…</div>
@@ -90,7 +113,9 @@ function chartOptions() {
           </thead>
           <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
             <tr v-if="!state.rows.length">
-              <td colspan="5" class="px-3 py-4 text-center text-gray-400 dark:text-gray-500">No rollup data in this window.</td>
+              <td colspan="5" class="px-3 py-4 text-center text-gray-400 dark:text-gray-500">
+                {{ state.search ? 'No rollups match your search.' : 'No rollup data in this window.' }}
+              </td>
             </tr>
             <tr v-for="(row, i) in state.rows" :key="i">
               <td class="max-w-md truncate px-3 py-2 text-gray-900 dark:text-gray-100">{{ row.label ?? row.key ?? row.group_hash }}</td>

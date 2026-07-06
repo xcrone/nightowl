@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '../services/api'
 import { resources } from '../resourceConfig'
 import { formatValue } from '../utils/format'
+import { debounce } from '../utils/debounce'
 
 const props = defineProps({
   resource: { type: String, required: true },
@@ -21,6 +22,7 @@ const state = reactive({
   page: 1,
   lastPage: 1,
   activeFilters: {},
+  search: '',
 })
 
 // Structural correlation filter arriving from ResourceDetail's "Related"
@@ -41,7 +43,13 @@ async function load() {
   state.error = null
 
   try {
-    const params = { page: state.page, sort: config.value.defaultSort, ...state.activeFilters, ...relatedFilter.value }
+    const params = {
+      page: state.page,
+      sort: config.value.defaultSort,
+      ...state.activeFilters,
+      ...relatedFilter.value,
+      q: state.search || undefined,
+    }
     const { data } = await api.get(`/api/${props.resource}`, { params })
     state.rows = data.data
     state.lastPage = data.last_page
@@ -70,12 +78,25 @@ function setSelectFilter(key, value) {
   state.page = 1
 }
 
+// Same "narrowing change -> re-page to 1" convention as toggleFlagFilter/
+// setSelectFilter above, debounced so each keystroke doesn't fire a request.
+const debouncedSearch = debounce(() => {
+  state.page = 1
+  load()
+}, 300)
+
+function onSearchInput(value) {
+  state.search = value
+  debouncedSearch()
+}
+
 watch(() => [state.page, state.activeFilters], load, { deep: true, immediate: false })
 watch(
   () => [props.resource, relatedFilter.value],
   () => {
     state.page = 1
     state.activeFilters = {}
+    state.search = ''
     load()
   },
   { deep: true, immediate: true },
@@ -96,7 +117,14 @@ watch(
       <button type="button" class="font-medium hover:underline" @click="clearRelatedFilter">Clear</button>
     </div>
 
-    <div v-if="config.filters.length" class="mb-4 flex flex-wrap gap-2">
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        :value="state.search"
+        @input="onSearchInput($event.target.value)"
+        :placeholder="config.searchPlaceholder ?? 'Search…'"
+        class="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+      />
       <template v-for="filter in config.filters" :key="filter.key">
         <button
           v-if="filter.flag"

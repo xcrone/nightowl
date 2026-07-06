@@ -5,6 +5,7 @@ namespace Tests\Feature\Telemetry;
 use App\Models\Telemetry\ExceptionRecord;
 use App\Models\Telemetry\Issue;
 use App\Models\Telemetry\LogRecord;
+use App\Models\Telemetry\QueryRecord;
 use App\Models\Telemetry\RequestRecord;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,7 +44,7 @@ class TelemetryApiTest extends TestCase
         // assert exact contents of, so pre-existing rows don't leak into
         // filter assertions. Safe: it's inside the per-test transaction
         // RefreshDatabase started above, rolled back on tearDown.
-        foreach (['nightowl_requests', 'nightowl_exceptions', 'nightowl_issues', 'nightowl_logs'] as $table) {
+        foreach (['nightowl_requests', 'nightowl_exceptions', 'nightowl_issues', 'nightowl_logs', 'nightowl_queries'] as $table) {
             DB::connection('nightowl')->table($table)->delete();
         }
     }
@@ -165,6 +166,86 @@ class TelemetryApiTest extends TestCase
 
         $this->actingAs($user)
             ->getJson('/api/requests?sort=some_unsortable_column')
+            ->assertOk();
+    }
+
+    public function test_logs_search_matches_tsvector_message(): void
+    {
+        $user = User::factory()->create();
+        LogRecord::factory()->create(['message' => 'database connection timed out']);
+        $match = LogRecord::factory()->create(['message' => 'payment webhook failed to process']);
+
+        $response = $this->actingAs($user)->getJson('/api/logs?q=webhook');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$match->id], $ids);
+    }
+
+    public function test_queries_search_matches_trigram_substring_in_sql(): void
+    {
+        $user = User::factory()->create();
+        QueryRecord::factory()->create(['sql_query' => 'select * from "orders" where "id" = ?']);
+        $match = QueryRecord::factory()->create(['sql_query' => 'select * from "invoice_line_items" where "invoice_id" = ?']);
+
+        // Substring match mid-identifier — this is exactly what trigram (not
+        // tsvector word-stemming) is for; "line_item" isn't a whole token.
+        $response = $this->actingAs($user)->getJson('/api/queries?q=line_item');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$match->id], $ids);
+    }
+
+    public function test_exceptions_search_matches_both_tsvector_and_trigram(): void
+    {
+        $user = User::factory()->create();
+        ExceptionRecord::factory()->create(['class' => 'RuntimeException', 'message' => 'unrelated failure']);
+        $byMessage = ExceptionRecord::factory()->create(['class' => 'RuntimeException', 'message' => 'the database connection was refused']);
+        $byClass = ExceptionRecord::factory()->create(['class' => 'App\\Exceptions\\PaymentDeclinedException', 'message' => 'unrelated']);
+
+        $response = $this->actingAs($user)->getJson('/api/exceptions?q=connection');
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$byMessage->id], $ids);
+
+        $response = $this->actingAs($user)->getJson('/api/exceptions?q=PaymentDeclined');
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$byClass->id], $ids);
+    }
+
+    public function test_search_composes_with_existing_filters(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['url' => '/api/orders', 'status_code' => 200]);
+        $match = RequestRecord::factory()->create(['url' => '/api/orders/123', 'status_code' => 500]);
+
+        $response = $this->actingAs($user)->getJson('/api/requests?q=orders&failed=1');
+
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$match->id], $ids);
+    }
+
+    public function test_empty_search_query_returns_unfiltered_results(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->count(2)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/requests?q=');
+
+        $response->assertOk();
+        $this->assertCount(2, $response->json('data'));
+    }
+
+    public function test_search_value_is_not_interpreted_as_sql(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['url' => "/api/it's-fine"]);
+
+        // A single-quote/semicolon in the search term must not break the
+        // query or run as SQL — proves parameter binding, not string
+        // interpolation.
+        $this->actingAs($user)
+            ->getJson('/api/requests?q='.urlencode("'; DROP TABLE nightowl_requests; --"))
             ->assertOk();
     }
 }

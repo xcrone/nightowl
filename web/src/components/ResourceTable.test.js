@@ -62,4 +62,35 @@ describe('ResourceTable', () => {
     const lastCall = api.get.mock.calls.at(-1)
     expect(lastCall[1].params.failed).toBe(1)
   })
+
+  it('typing in the search box debounces and re-fetches with q, resetting to page 1', async () => {
+    vi.useFakeTimers()
+    api.get.mockResolvedValue({ data: { data: [], last_page: 1 } })
+
+    const router = makeRouter()
+    router.push('/requests')
+    await router.isReady()
+
+    const wrapper = mount(ResourceTable, {
+      props: { resource: 'requests' },
+      global: { plugins: [router] },
+    })
+
+    await vi.waitUntil(() => api.get.mock.calls.length >= 1)
+    api.get.mockClear()
+
+    const input = wrapper.find('input[type="text"]')
+    await input.setValue('timeout')
+
+    // Not yet — debounced.
+    expect(api.get).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(300)
+
+    const lastCall = api.get.mock.calls.at(-1)
+    expect(lastCall[1].params.q).toBe('timeout')
+    expect(lastCall[1].params.page).toBe(1)
+
+    vi.useRealTimers()
+  })
 })

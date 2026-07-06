@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\SearchTerm;
 use Illuminate\Http\Request;
 
 class TelemetryController extends Controller
@@ -31,6 +32,7 @@ class TelemetryController extends Controller
                 ->where('execution_id', $request->query('execution_id'));
         }
 
+        $this->applySearch($query, $config, $request);
         $this->applySort($query, $config, $request);
 
         $perPage = min((int) $request->query('per_page', 25), 100);
@@ -160,6 +162,65 @@ class TelemetryController extends Controller
         }
 
         $query->where($filter['column'], $filter['op'] ?? '=', $value);
+    }
+
+    /**
+     * Applies ?q= against whichever search strategy config/telemetry.php's
+     * 'search' key declares for this resource. Composes as an additional
+     * AND-ed where() alongside the existing filters/traces_to_parent
+     * scoping above — it narrows the same query further, it doesn't
+     * replace those clauses.
+     *
+     * tsvector and trigram are OR'd together within the search clause
+     * itself (a resource declaring both, e.g. exceptions, should match on
+     * either) — but the whole thing is one where(fn (...) => ...) group so
+     * it combines with the surrounding AND-ed filters correctly regardless
+     * of operator precedence.
+     */
+    protected function applySearch($query, array $config, Request $request): void
+    {
+        $search = $config['search'] ?? null;
+
+        if ($search === null) {
+            return;
+        }
+
+        $q = SearchTerm::fromRequest($request);
+
+        if ($q === null) {
+            return;
+        }
+
+        $query->where(function ($outer) use ($search, $q) {
+            if (isset($search['tsvector'])) {
+                // websearch_to_tsquery tolerates arbitrary user input
+                // (quotes, "-", "OR", trailing punctuation) without raising
+                // a tsquery syntax error, unlike plainto_tsquery/
+                // to_tsquery — the closest built-in parser to "how a
+                // search box actually behaves".
+                //
+                // $search['tsvector'] is a fixed string from static PHP
+                // config (never request input), so interpolating it into
+                // the raw SQL as a column identifier is safe; $q is the
+                // only user-controlled value here and it's always passed
+                // as a bound parameter (?), never concatenated into the
+                // SQL string.
+                $outer->orWhereRaw(
+                    "{$search['tsvector']} @@ websearch_to_tsquery('english', ?)",
+                    [$q]
+                );
+            }
+
+            if (isset($search['trigram'])) {
+                $escaped = SearchTerm::escapeForLike($q);
+
+                $outer->orWhere(function ($trigram) use ($search, $escaped) {
+                    foreach ($search['trigram'] as $column) {
+                        $trigram->orWhere($column, 'ILIKE', '%'.$escaped.'%');
+                    }
+                });
+            }
+        });
     }
 
     protected function applySort($query, array $config, Request $request): void

@@ -31,6 +31,19 @@ use App\Models\Telemetry\ScheduledTask;
 |                     e.g. ?failed=1 — the where() value is fixed by config,
 |                     not user input.
 |
+| `search` (optional): declares how ?q= free-text search is applied for this
+| resource, via TelemetryController::applySearch(). Either or both keys:
+|   - 'tsvector' => 'search_vector'   matches a generated tsvector column
+|                                     (word-stemmed; see the
+|                                     nightowl_*_search_vector migrations)
+|   - 'trigram'  => ['col1', 'col2']  ILIKE '%q%' over these columns
+|                                     (substring match, accelerated by a
+|                                     pg_trgm GIN index on each column)
+| A resource declaring both matches on either (OR'd together). Prose columns
+| (log/exception messages) use tsvector; identifier-like columns (URLs, SQL,
+| class names, cache keys) use trigram since a remembered fragment rarely
+| lands on a word boundary.
+|
 | No closures here (this file is safe to `config:cache`).
 |
 |--------------------------------------------------------------------------
@@ -73,6 +86,10 @@ return [
                 'status' => ['column' => 'status', 'op' => '='],
                 'type' => ['column' => 'type', 'op' => '='],
             ],
+            'search' => [
+                'tsvector' => 'search_vector',
+                'trigram' => ['exception_class'],
+            ],
         ],
 
         'exceptions' => [
@@ -84,6 +101,10 @@ return [
                 'unhandled_only' => ['column' => 'handled', 'op' => '=', 'value' => false],
             ],
             'traces_to_parent' => true,
+            'search' => [
+                'tsvector' => 'search_vector',
+                'trigram' => ['class', 'trace', 'file'],
+            ],
         ],
 
         'requests' => [
@@ -98,6 +119,9 @@ return [
             ],
             'parent_key' => 'trace_id',
             'parent_source' => 'request',
+            'search' => [
+                'trigram' => ['url', 'route_name', 'route_path', 'route_action'],
+            ],
         ],
 
         'outgoing-requests' => [
@@ -108,6 +132,9 @@ return [
                 'failed' => ['column' => 'status_code', 'op' => '>=', 'value' => 400],
             ],
             'traces_to_parent' => true,
+            'search' => [
+                'trigram' => ['host', 'url'],
+            ],
         ],
 
         'jobs' => [
@@ -123,6 +150,9 @@ return [
             'traces_to_parent' => true,
             'parent_key' => 'attempt_id',
             'parent_source' => 'job',
+            'search' => [
+                'trigram' => ['job_class', 'queue'],
+            ],
         ],
 
         'commands' => [
@@ -132,6 +162,9 @@ return [
             'filters' => [],
             'parent_key' => 'trace_id',
             'parent_source' => 'command',
+            'search' => [
+                'trigram' => ['class', 'name', 'command'],
+            ],
         ],
 
         'scheduled-tasks' => [
@@ -143,6 +176,9 @@ return [
             ],
             'parent_key' => 'trace_id',
             'parent_source' => 'scheduled_task',
+            'search' => [
+                'trigram' => ['command', 'expression'],
+            ],
         ],
 
         'queries' => [
@@ -153,6 +189,9 @@ return [
                 'slow' => ['column' => 'duration', 'op' => '>', 'value' => 100 * 1000],
             ],
             'traces_to_parent' => true,
+            'search' => [
+                'trigram' => ['sql_query', 'file', 'connection'],
+            ],
         ],
 
         'cache-events' => [
@@ -163,6 +202,9 @@ return [
                 'event_type' => ['column' => 'event_type', 'op' => '='],
             ],
             'traces_to_parent' => true,
+            'search' => [
+                'trigram' => ['key', 'store'],
+            ],
         ],
 
         'mail' => [
@@ -171,6 +213,9 @@ return [
             'sortable' => ['created_at', 'duration'],
             'filters' => [],
             'traces_to_parent' => true,
+            'search' => [
+                'trigram' => ['subject', 'mailable', 'recipients'],
+            ],
         ],
 
         'notifications' => [
@@ -179,6 +224,9 @@ return [
             'sortable' => ['created_at', 'duration'],
             'filters' => [],
             'traces_to_parent' => true,
+            'search' => [
+                'trigram' => ['notification', 'channel', 'notifiable_type'],
+            ],
         ],
 
         'logs' => [
@@ -189,6 +237,9 @@ return [
                 'level' => ['column' => 'level', 'op' => '='],
             ],
             'traces_to_parent' => true,
+            'search' => [
+                'tsvector' => 'search_vector',
+            ],
         ],
 
     ],

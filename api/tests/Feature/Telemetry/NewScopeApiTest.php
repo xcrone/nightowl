@@ -42,6 +42,19 @@ class NewScopeApiTest extends TestCase
         $this->assertCount(2, $response->json('data'));
     }
 
+    public function test_users_search_matches_name_or_email(): void
+    {
+        $admin = User::factory()->create();
+        NightowlUser::factory()->create(['name' => 'Alice', 'email' => 'alice@example.com']);
+        $match = NightowlUser::factory()->create(['name' => 'Bob', 'email' => 'bob@acme.test']);
+
+        $response = $this->actingAs($admin)->getJson('/api/users?q=acme');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'user_id');
+        $this->assertSame([$match->user_id], $ids);
+    }
+
     public function test_creates_and_validates_slack_alert_channel(): void
     {
         $admin = User::factory()->create();

@@ -116,6 +116,7 @@ export const resources = {
       { key: 'type', label: 'Type', options: ['exception', 'performance'] },
     ],
     defaultSort: '-last_seen_at',
+    searchPlaceholder: 'Search exception class, description…',
   },
   exceptions: {
     label: 'Exceptions',
@@ -130,6 +131,7 @@ export const resources = {
       { key: 'unhandled_only', label: 'Unhandled only', flag: true },
     ],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search class, message, file, trace…',
   },
   requests: {
     label: 'Requests',
@@ -148,6 +150,7 @@ export const resources = {
       { key: 'has_exceptions', label: 'Has exceptions', flag: true },
     ],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search URL, route…',
   },
   'outgoing-requests': {
     label: 'Outgoing Requests',
@@ -161,6 +164,7 @@ export const resources = {
     ],
     filters: [{ key: 'failed', label: 'Failed (4xx/5xx)', flag: true }],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search host, URL…',
   },
   jobs: {
     label: 'Jobs',
@@ -174,6 +178,7 @@ export const resources = {
     ],
     filters: [{ key: 'status', label: 'Status', options: ['queued', 'processed', 'released', 'failed'] }],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search job class, queue…',
   },
   commands: {
     label: 'Commands',
@@ -192,6 +197,7 @@ export const resources = {
     ],
     filters: [],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search command, class, name…',
   },
   'scheduled-tasks': {
     label: 'Scheduled Tasks',
@@ -204,6 +210,7 @@ export const resources = {
     ],
     filters: [{ key: 'status', label: 'Status', options: ['success', 'failed'] }],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search command, expression…',
   },
   queries: {
     label: 'Queries',
@@ -215,6 +222,7 @@ export const resources = {
     ],
     filters: [{ key: 'slow', label: 'Slow (>100ms)', flag: true }],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search SQL, file, connection…',
   },
   'cache-events': {
     label: 'Cache Events',
@@ -227,6 +235,7 @@ export const resources = {
     ],
     filters: [{ key: 'event_type', label: 'Type', options: ['hit', 'missed', 'write', 'forget'] }],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search key, store…',
   },
   mail: {
     label: 'Mail',
@@ -239,6 +248,7 @@ export const resources = {
     ],
     filters: [],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search subject, mailable, recipients…',
   },
   notifications: {
     label: 'Notifications',
@@ -251,6 +261,7 @@ export const resources = {
     ],
     filters: [],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search notification, channel…',
   },
   logs: {
     label: 'Logs',
@@ -264,6 +275,7 @@ export const resources = {
       { key: 'level', label: 'Level', options: ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'] },
     ],
     defaultSort: '-created_at',
+    searchPlaceholder: 'Search log messages…',
   },
 }
 

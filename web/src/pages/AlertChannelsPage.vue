@@ -1,13 +1,25 @@
 <script setup>
-import { onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import api from '../services/api'
 
 const state = reactive({
   channels: [],
   loading: false,
+  search: '',
   form: { name: '', type: 'slack', webhook_url: '', url: '', secret: '', recipients: '' },
   error: null,
   submitting: false,
+})
+
+// Client-side only: this list is already fetched in full and unpaginated
+// (a small admin config list, not telemetry), so there's no need for a
+// server round-trip just to filter it.
+const filteredChannels = computed(() => {
+  const q = state.search.trim().toLowerCase()
+  if (!q) return state.channels
+  return state.channels.filter(
+    (c) => c.name?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q),
+  )
 })
 
 async function load() {
@@ -59,6 +71,13 @@ onMounted(load)
   <div>
     <h1 class="mb-4 text-xl font-semibold text-gray-900 dark:text-gray-100">Alert Channels</h1>
 
+    <input
+      v-model="state.search"
+      type="text"
+      placeholder="Search name, type…"
+      class="mb-4 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+    />
+
     <div class="mb-6 overflow-x-auto rounded border border-gray-200 dark:border-gray-700">
       <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
         <thead class="bg-gray-50 dark:bg-gray-800">
@@ -73,7 +92,10 @@ onMounted(load)
           <tr v-if="!state.loading && !state.channels.length">
             <td colspan="4" class="px-3 py-4 text-center text-gray-400 dark:text-gray-500">No alert channels configured.</td>
           </tr>
-          <tr v-for="channel in state.channels" :key="channel.id">
+          <tr v-else-if="!state.loading && !filteredChannels.length">
+            <td colspan="4" class="px-3 py-4 text-center text-gray-400 dark:text-gray-500">No channels match your search.</td>
+          </tr>
+          <tr v-for="channel in filteredChannels" :key="channel.id">
             <td class="px-3 py-2 text-gray-900 dark:text-gray-100">{{ channel.name }}</td>
             <td class="px-3 py-2 text-gray-900 dark:text-gray-100">{{ channel.type }}</td>
             <td class="px-3 py-2">
