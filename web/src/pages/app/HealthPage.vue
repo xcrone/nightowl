@@ -6,6 +6,7 @@ import api from '../../services/api'
 import { absoluteTime, formatPercent } from '../../utils/format'
 import StatusDot from '../../components/StatusDot.vue'
 import LineChartPanel from '../../components/LineChartPanel.vue'
+import { BADGE } from '../../resourceConfig'
 
 // Monitors the NightOwl ingest pipeline itself (the ReactPHP daemon(s)):
 // status banner + health score, per-instance table, and four time-series
@@ -59,10 +60,10 @@ const bannerClass = computed(() => ({
 
 function healthBadge(health) {
   return {
-    healthy: 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400',
-    degraded: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-    unhealthy: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
-  }[health] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+    healthy: BADGE.green,
+    degraded: BADGE.amber,
+    unhealthy: BADGE.red,
+  }[health] ?? BADGE.gray
 }
 
 function whenAbs(iso) {

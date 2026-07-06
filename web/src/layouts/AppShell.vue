@@ -6,6 +6,7 @@ import { useAppStore } from '../store/app'
 import { useThemeStore } from '../store/theme'
 import { navGroups } from '../nav.js'
 import PeriodSelector from '../components/PeriodSelector.vue'
+import { BADGE } from '../resourceConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,7 +105,8 @@ async function signOut() {
                 <span v-if="!collapsed" class="min-w-0 flex-1 truncate">{{ item.label }}</span>
                 <span
                   v-if="item.badge && !collapsed && app.openIssues"
-                  class="rounded-full bg-red-100 px-1.5 text-xs font-medium text-red-700 dark:bg-red-500/15 dark:text-red-400"
+                  class="rounded-full px-1.5 text-xs font-medium"
+                  :class="BADGE.red"
                 >
                   {{ app.openIssues }}
                 </span>

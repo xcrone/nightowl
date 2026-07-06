@@ -284,6 +284,7 @@ export const BADGE = {
   blue: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400',
   green: 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400',
   yellow: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-400',
+  amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
   red: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
   redStrong: 'bg-red-200 text-red-800 dark:bg-red-500/25 dark:text-red-300',
   redStrongest: 'bg-red-300 text-red-900 dark:bg-red-500/40 dark:text-red-200',
