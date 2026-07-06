@@ -2,6 +2,7 @@
 import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { useAppStore } from '../../store/app'
+import { useAuthStore } from '../../store/auth'
 import api from '../../services/api'
 import { relativeTime } from '../../utils/format'
 import { BADGE } from '../../resourceConfig'
@@ -12,6 +13,7 @@ import StatPanel from '../../components/StatPanel.vue'
 // GET /api/apps/{appId}/issues/{id}.
 const route = useRoute()
 const app = useAppStore()
+const auth = useAuthStore()
 
 const appId = computed(() => route.params.appId)
 const issueId = computed(() => route.params.id)
@@ -31,6 +33,7 @@ const commentTab = ref('write')
 const commentBody = ref('')
 const copied = ref('')
 const posting = ref(false)
+const assigneeInput = ref('')
 
 async function load() {
   if (!appId.value || !issueId.value) return
@@ -42,6 +45,7 @@ async function load() {
     state.occurrences = data.occurrences ?? []
     state.occurrencesByEnv = data.occurrences_by_environment ?? []
     state.activity = data.activity ?? []
+    assigneeInput.value = state.issue.assigned_to ?? ''
   } catch {
     state.issue = {}
     state.stackFrames = []
@@ -147,6 +151,20 @@ async function setPriority(priority) {
     await api.post(`/api/apps/${appId.value}/issues/${issueId.value}/priority`, { priority })
     state.issue.priority = priority
   } catch { /* demo no-op */ }
+}
+
+async function assign(assignedTo) {
+  try {
+    await api.post(`/api/apps/${appId.value}/issues/${issueId.value}/assign`, { assigned_to: assignedTo })
+    state.issue.assigned_to = assignedTo
+    assigneeInput.value = assignedTo ?? ''
+  } catch { /* demo no-op */ }
+}
+
+function saveAssignee() {
+  const value = assigneeInput.value.trim() || null
+  if (value === (state.issue.assigned_to ?? null)) return
+  assign(value)
 }
 
 function occurrenceUserLink(userId) {
@@ -356,6 +374,39 @@ watch(issueId, load, { immediate: true })
             <div class="flex justify-between">
               <dt class="text-gray-500 dark:text-gray-400">Users</dt>
               <dd class="text-gray-900 dark:text-gray-100">{{ state.issue.users_count ?? 0 }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-gray-500 dark:text-gray-400">Assigned</dt>
+              <dd class="flex items-center gap-1.5">
+                <span
+                  v-if="state.issue.assigned_to"
+                  class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700 dark:bg-primary-500/15 dark:text-primary-400"
+                  :title="state.issue.assigned_to"
+                >{{ String(state.issue.assigned_to).slice(0, 1).toUpperCase() }}</span>
+                <span v-else class="inline-block h-6 w-6 rounded-full border border-dashed border-gray-300 dark:border-gray-600" />
+              </dd>
+            </div>
+            <div class="flex items-center gap-1.5 pt-1">
+              <input
+                v-model="assigneeInput"
+                type="text"
+                placeholder="Unassigned"
+                class="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                @keyup.enter="saveAssignee"
+                @blur="saveAssignee"
+              />
+              <button
+                v-if="state.issue.assigned_to !== auth.user?.email"
+                type="button"
+                class="whitespace-nowrap text-xs text-primary-600 hover:underline dark:text-primary-400"
+                @click="assign(auth.user?.email)"
+              >Assign to me</button>
+              <button
+                v-else
+                type="button"
+                class="whitespace-nowrap text-xs text-gray-500 hover:underline dark:text-gray-400"
+                @click="assign(null)"
+              >Unassign</button>
             </div>
           </dl>
         </StatPanel>

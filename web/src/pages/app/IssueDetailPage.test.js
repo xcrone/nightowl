@@ -28,7 +28,7 @@ function impl(url) {
   return Promise.resolve({ data: detail })
 }
 
-async function mountPage() {
+async function mountPage(authState = { user: null, checked: true }) {
   api.get.mockImplementation(impl)
   api.post.mockResolvedValue({ data: {} })
   const router = createRouter({
@@ -42,7 +42,10 @@ async function mountPage() {
   await router.isReady()
   const wrapper = mount(IssueDetailPage, {
     global: {
-      plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h' } } })],
+      plugins: [router, createTestingPinia({
+        createSpy: vi.fn,
+        initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h' }, auth: authState },
+      })],
     },
   })
   await flushPromises()
@@ -85,5 +88,28 @@ describe('IssueDetailPage', () => {
     await btn.trigger('click')
     await flushPromises()
     expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/resolve')
+  })
+
+  it('assigns the issue to the current user, then unassigns it', async () => {
+    const wrapper = await mountPage({ user: { id: 1, name: 'Dev', email: 'dev@example.test' }, checked: true })
+
+    const assignBtn = wrapper.findAll('button').find((b) => b.text() === 'Assign to me')
+    await assignBtn.trigger('click')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/assign', { assigned_to: 'dev@example.test' })
+
+    const unassignBtn = wrapper.findAll('button').find((b) => b.text() === 'Unassign')
+    await unassignBtn.trigger('click')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/assign', { assigned_to: null })
+  })
+
+  it('assigns via the free-text input on blur', async () => {
+    const wrapper = await mountPage()
+    const input = wrapper.find('input[placeholder="Unassigned"]')
+    await input.setValue('teammate@example.test')
+    await input.trigger('blur')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/assign', { assigned_to: 'teammate@example.test' })
   })
 })
