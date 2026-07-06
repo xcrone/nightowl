@@ -15,7 +15,8 @@ app/      The original Laravel 13 + Filament 5 dashboard this is replacing.
           Kept only as a reference during the migration — not wired into
           docker-compose.yml anymore. Remove once api/+web/ reach parity.
 web/      Vue3 + Vite + Pinia SPA — the new dashboard UI, replacing app/'s
-          Filament panel.
+          Filament panel. See web/CLAUDE.md (always use Tailwind for
+          styling).
 ```
 
 ## Why the split
