@@ -12,9 +12,10 @@ logic, or a change to conditions (validation rules, settings, permissions, calcu
 written**. This is not optional and it is not something you decide to skip because the
 change "looks small."
 
-This does not retroactively apply to the existing `app/Http/Controllers/` code
-(`TelemetryController`/`AggregateController`) — that's a separate, already-established
-pattern; use ordinary judgment there.
+This does not retroactively apply to the generic, config-driven engines under
+`app/Actions/` (`Telemetry`/`Aggregates`/`Rollups`/`Timeseries`/`Health` — formerly
+`app/Http/Controllers/`, migrated but not a bounded domain) — that's a separate,
+already-established pattern; use ordinary judgment there.
 
 Pair with [`action-test-sync`](../action-test-sync/SKILL.md) (every Action stays covered) and
 [`api-domain-dev`](../api-domain-dev/SKILL.md) (how the API code is actually built, *after* this gate).

@@ -30,12 +30,13 @@ via a local Composer path repository — don't confuse the two: this agent is ap
   list the test changes, get the user to confirm the tests AND the requirements, then
   build tests via a dedicated step before implementation. Don't touch the unit tests
   during implementation without explicit permission.
-- **New domain work follows DDD + Actions (`api-domain-dev` skill).** No HTTP
-  controllers for new domains — every entrypoint is a `lorisleiva/laravel-actions` Action
+- **All domain work follows DDD + Actions (`api-domain-dev` skill).** No HTTP
+  controllers — every entrypoint is a `lorisleiva/laravel-actions` Action
   (`authorize → rules → handle`), organized under `app/Domains/<Module>/`. Return API
-  Resources, never raw models. The existing `app/Http/Controllers/` code
-  (`TelemetryController`/`AggregateController` + friends) predates this convention —
-  leave it as-is unless a task specifically asks you to migrate it.
+  Resources, never raw models. `app/Http/Controllers/Api/` no longer exists — it was
+  fully migrated to `app/Domains/{DataManagement,Auth,Users,Apps,Settings,Issues}/`
+  plus `app/Actions/` for the 5 generic config-driven telemetry/aggregate engines
+  (deliberately not a domain — see `api/CLAUDE.md`).
 - **UUIDs only across the api → web boundary** (`uuid-public-ids` skill). The integer
   `id` is internal and must never reach the SPA — expose an indexed `uuid`, bind routes
   on it, serialize it under a `uuid` key. (A PreToolUse hook blocks id leaks and

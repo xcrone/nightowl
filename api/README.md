@@ -37,11 +37,12 @@ GET/POST .../templates[/sync|/apply]
 ```
 
 ### Key pieces
-- `config/telemetry.php` — registry driving the generic `TelemetryController`
-  (12 raw resources: filters, search, trace correlation).
-- `config/aggregates.php` — registry driving `AggregateController`. Aggregation
-  is computed on the fly from raw tables (GROUP BY + Postgres `percentile_cont`),
-  scoped by `app_id` + the period window — not the pre-`app_id` rollup tables.
+- `config/telemetry.php` — registry driving the generic `App\Actions\Telemetry\*`
+  Actions (12 raw resources: filters, search, trace correlation).
+- `config/aggregates.php` — registry driving `App\Actions\Aggregates\IndexAggregate`.
+  Aggregation is computed on the fly from raw tables (GROUP BY + Postgres
+  `percentile_cont`), scoped by `app_id` + the period window — not the
+  pre-`app_id` rollup tables.
 - `App\Support\Period` — resolves `?period=1h|6h|24h|7d|14d|30d` (or `from`/`to`)
   into a `[from, to]` window + chart bucket size.
 - `App\Models\Telemetry\TelemetryRecord::scopeForApp()` — the `where app_id`
