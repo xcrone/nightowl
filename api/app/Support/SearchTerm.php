@@ -5,11 +5,12 @@ namespace App\Support;
 use Illuminate\Http\Request;
 
 /**
- * Shared `?q=` handling for the two controllers that support free-text
- * search (TelemetryController, NightowlUserController). No FormRequest
- * layer exists anywhere in this app (see config/telemetry.php's filter
- * design) — this stays a plain static helper rather than introducing one
- * just for a single optional string param.
+ * Shared `?q=` handling for the entrypoints that support free-text search
+ * (App\Support\TelemetryQuery, App\Actions\Aggregates\IndexAggregate,
+ * App\Domains\Users\Actions\ListNightowlUsers). No FormRequest layer exists
+ * anywhere in this app (see config/telemetry.php's filter design) — this
+ * stays a plain static helper rather than introducing one just for a single
+ * optional string param.
  */
 class SearchTerm
 {

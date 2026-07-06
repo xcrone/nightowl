@@ -2,6 +2,8 @@
 
 namespace App\Models\Telemetry;
 
+use Illuminate\Support\Str;
+
 class Issue extends TelemetryRecord
 {
     protected $table = 'nightowl_issues';
@@ -16,6 +18,20 @@ class Issue extends TelemetryRecord
         'occurrences_count' => 'integer',
         'users_count' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        // uuid-public-ids: every new issue gets a public uuid identifier
+        // going forward; existing rows are backfilled by the cross-repo
+        // retrofit migration
+        // (2026_07_06_140000_add_uuid_to_nightowl_issues_tables, run against
+        // the `nightowl` connection since this table is owned by
+        // nightowl/agent, not this repo). Route binding stays on `id` for
+        // now (see App\Domains\Issues\README.md) — uuid is additive.
+        static::creating(function (Issue $issue) {
+            $issue->uuid ??= (string) Str::uuid();
+        });
+    }
 
     public function activity()
     {

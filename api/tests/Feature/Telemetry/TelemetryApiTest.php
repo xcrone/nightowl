@@ -253,4 +253,25 @@ class TelemetryApiTest extends TestCase
             ->getJson('/api/apps/test_app/requests?q='.urlencode("'; DROP TABLE nightowl_requests; --"))
             ->assertOk();
     }
+
+    /**
+     * Relocated from tests/Feature/Apps/AppScopingTest.php (that file's App
+     * half moved to AppApiTest.php in Batch 4; this, its Telemetry half,
+     * moves here in Batch 7 alongside the rest of TelemetryController's
+     * -> Actions coverage).
+     */
+    public function test_telemetry_is_scoped_to_its_app(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('other_app');
+
+        $mine = RequestRecord::factory()->create(['app_id' => 'test_app']);
+        RequestRecord::factory()->create(['app_id' => 'other_app']);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$mine->id], $ids);
+    }
 }

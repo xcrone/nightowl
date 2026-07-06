@@ -16,8 +16,10 @@ use App\Models\Telemetry\ScheduledTask;
 | Aggregated list registry (docs parity)
 |--------------------------------------------------------------------------
 |
-| Drives GET /api/apps/{app}/aggregate/{resource} via AggregateController.
-| Each list page in docs/pages/*-list.md rolls raw telemetry up per key
+| Drives GET /api/apps/{app}/aggregate/{resource} via
+| App\Actions\Aggregates\IndexAggregate (app/Actions/, a cross-cutting
+| Action, not a Domain — see api-domain-dev's carve-out). Each list page in
+| docs/pages/*-list.md rolls raw telemetry up per key
 | (route / job class / command / query shape / host / cache key / mailable /
 | notification / user / exception class) into stat panels + a sortable,
 | searchable table.
@@ -34,8 +36,8 @@ use App\Models\Telemetry\ScheduledTask;
 |   'label'        column shown as the row's representative label.
 |   'duration'     true → emit avg/p95/min/max over the `duration` column.
 |   'count_buckets' [alias => [[col, op, val], ...]] → conditional COUNT()s
-|                   (conditions AND'd). AggregateController turns each into
-|                   SUM(CASE WHEN … THEN 1 ELSE 0 END).
+|                   (conditions AND'd). App\Support\AggregateQuery turns each
+|                   into SUM(CASE WHEN … THEN 1 ELSE 0 END).
 |   'last'         column to emit MAX() of as `last_<name>` (e.g. last_sent).
 |   'sortable'     whitelisted sort keys (metric aliases or group columns).
 |   'default_sort' default order (e.g. '-total').
@@ -155,7 +157,7 @@ return [
         'model' => NotificationRecord::class,
         'group_by' => ['notification'], 'label' => 'notification',
         'duration' => true, 'last' => 'created_at',
-        // channel values collected distinct per group by AggregateController.
+        // channel values collected distinct per group by App\Support\AggregateQuery.
         'collect_distinct' => ['channels' => 'channel'],
         'sortable' => ['count', 'avg', 'p95', 'last_created_at', 'notification'],
         'default_sort' => '-count',
@@ -178,8 +180,8 @@ return [
     ],
 
     // users aggregate is bespoke (correlates requests + jobs + exceptions per
-    // user_id); AggregateController::users() handles it directly. Listed here
-    // for routing/whitelisting only.
+    // user_id); App\Actions\Aggregates\IndexAggregate::users() handles it
+    // directly. Listed here for routing/whitelisting only.
     'users' => [
         'source' => 'bespoke',
         'sortable' => ['requests', 'queued_jobs', 'exceptions', 'last_seen', 'user_id'],

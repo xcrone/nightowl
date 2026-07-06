@@ -18,10 +18,13 @@ use App\Models\Telemetry\ScheduledTask;
 | Telemetry resource registry
 |--------------------------------------------------------------------------
 |
-| One generic TelemetryController serves every read-only nightowl_* table
-| (mirrors the 12 Filament resources in the old app/ dashboard) instead of
-| 12 near-identical controllers. Each entry declares which query-string
-| filters are allowed and how they translate to a where() clause.
+| One generic engine — App\Actions\Telemetry\{IndexTelemetryResource,
+| ShowTelemetryResource,RelatedTelemetryResource} (app/Actions/, a
+| cross-cutting Action, not a Domain — see api-domain-dev's carve-out) —
+| serves every read-only nightowl_* table (mirrors the 12 Filament resources
+| in the old app/ dashboard) instead of 12 near-identical entrypoints. Each
+| entry declares which query-string filters are allowed and how they
+| translate to a where() clause.
 |
 | Filter shapes:
 |   - param-driven:  ['column' => 'status', 'op' => '=']
@@ -32,7 +35,7 @@ use App\Models\Telemetry\ScheduledTask;
 |                     not user input.
 |
 | `search` (optional): declares how ?q= free-text search is applied for this
-| resource, via TelemetryController::applySearch(). Either or both keys:
+| resource, via App\Support\TelemetryQuery::applySearch(). Either or both keys:
 |   - 'tsvector' => 'search_vector'   matches a generated tsvector column
 |                                     (word-stemmed; see the
 |                                     nightowl_*_search_vector migrations)
@@ -70,7 +73,7 @@ use App\Models\Telemetry\ScheduledTask;
 | that job actually runs is itself an origin for its own queries/etc.
 | Verified against real drained data in nightowl_jobs/nightowl_queries
 | rather than assumed from the SDK source, since trace_id/execution_id
-| don't always coincide (see TelemetryController::related()).
+| don't always coincide (see App\Actions\Telemetry\RelatedTelemetryResource).
 |
 */
 

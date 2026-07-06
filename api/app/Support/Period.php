@@ -23,8 +23,16 @@ class Period
         '30d' => 2592000,
     ];
 
-    /** @return array{0: Carbon, 1: Carbon, 2: string} [$from, $to, $period] */
-    public static function resolve(Request $request): array
+    /**
+     * @param  string  $defaultPeriod  fallback period token when the request
+     *                                 carries neither an explicit period nor
+     *                                 from/to (default '1h' everywhere except
+     *                                 Rollups, which preserves its pre-Actions
+     *                                 24h default lookback — see
+     *                                 App\Actions\Rollups\IndexRollup).
+     * @return array{0: Carbon, 1: Carbon, 2: string} [$from, $to, $period]
+     */
+    public static function resolve(Request $request, string $defaultPeriod = '1h'): array
     {
         $to = $request->filled('to') ? Carbon::parse($request->query('to')) : Carbon::now();
 
@@ -34,9 +42,9 @@ class Period
             return [$from, $to, 'custom'];
         }
 
-        $period = (string) $request->query('period', '1h');
-        $seconds = self::WINDOWS[$period] ?? self::WINDOWS['1h'];
-        $period = array_key_exists($period, self::WINDOWS) ? $period : '1h';
+        $period = (string) $request->query('period', $defaultPeriod);
+        $seconds = self::WINDOWS[$period] ?? self::WINDOWS[$defaultPeriod] ?? self::WINDOWS['1h'];
+        $period = array_key_exists($period, self::WINDOWS) ? $period : $defaultPeriod;
 
         return [$to->clone()->subSeconds($seconds), $to, $period];
     }
