@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/generated-routes-reminder.sh",
+            "statusMessage": "Guarding generated routes"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pnpm-only-reminder.sh",
+            "statusMessage": "Checking pnpm usage"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in */__tests__/*|*/widgets/*) : ;; */src/pages/*.vue) jq -n --arg c \"REMINDER: a page view under src/pages/ was edited. If it backs a GET route it must ship a Vitest refresh test (cold mount, fresh Pinia+router+Vue Query, assert it renders) in a co-located __tests__/ folder before done — see the web-feature-dev skill.\" '{hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:$c}}' ;; esac 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/storage-style-reminder.sh",
+            "statusMessage": "Checking persistence & styling conventions"
+          }
+        ]
+      }
+    ]
+  }
+}

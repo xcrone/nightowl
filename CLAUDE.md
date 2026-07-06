@@ -6,9 +6,9 @@ The stack is split into three sibling projects:
 agent/    nightowl/agent — the open-source telemetry ingest daemon (ReactPHP
           TCP/UDP server, SQLite buffer, Postgres COPY drain). See
           agent/CLAUDE.md for its internals.
-api/      Laravel 13 + Sanctum — JSON API over the nightowl_* Postgres tables.
-          Consumes agent/ via a local Composer path repository
-          (api/composer.json: repositories -> { type: path, url: ../agent }),
+api/      Laravel 13 + Sanctum — JSON API over the nightowl_* Postgres tables. See
+          api/CLAUDE.md for its internals. Consumes agent/ via a local Composer path
+          repository (api/composer.json: repositories -> { type: path, url: ../agent }),
           so edits to agent/ are live in api/ without a release/tag.
 web/      Vue3 + Vite + Pinia SPA — the multi-app dashboard UI (org → teams →
           apps). See web/CLAUDE.md (always use Tailwind for styling).
@@ -67,19 +67,22 @@ reference is `docs/api-contract.md`.
   backfilled to the seeded default app), so one shared Postgres holds several
   apps. Per-app telemetry is nested under `/api/apps/{app}/…` and scoped
   `where app_id = ?` (`TelemetryRecord::scopeForApp`).
-- **Two config registries drive generic controllers:** `api/config/telemetry.php`
-  (raw lists/detail/related via `TelemetryController`) and
-  `api/config/aggregates.php` (per-key aggregated lists via `AggregateController`,
-  computed on the fly with GROUP BY + Postgres `percentile_cont`, not the
-  pre-`app_id` rollup tables). Period windows resolve through `App\Support\Period`.
+- **Two config registries drive generic, cross-cutting Actions** (`api/app/Actions/`,
+  deliberately not a DDD domain — see `api/CLAUDE.md`): `api/config/telemetry.php`
+  (raw lists/detail/related via `App\Actions\Telemetry\*`) and
+  `api/config/aggregates.php` (per-key aggregated lists via
+  `App\Actions\Aggregates\IndexAggregate`, computed on the fly with GROUP BY + Postgres
+  `percentile_cont`, not the pre-`app_id` rollup tables). Period windows resolve
+  through `App\Support\Period`.
 - **Frontend** mirrors this: `web/src/router` nests every page under
   `/dashboard/:appId`, `store/app.js` holds the current app + period (drives
   all fetches), and the aggregated list pages are thin wrappers over
   `AggregateListPage.vue` + `web/src/aggregateConfig.js`.
 - **Seeding:** `db:seed` creates the org/teams/apps + admin user;
   `db:seed --class=Database\Seeders\TelemetrySeeder` fills demo telemetry for
-  every app (dev-only). Agent Health is synthesized in-controller (no data
-  source). Auth is Sanctum SPA cookies — use `localhost`, not `127.0.0.1`.
+  every app (dev-only). Agent Health is synthesized in
+  `App\Actions\Health\ShowAgentHealth` (no data source). Auth is Sanctum SPA
+  cookies — use `localhost`, not `127.0.0.1`.
 
 ## CI
 
