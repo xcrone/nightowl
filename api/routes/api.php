@@ -13,7 +13,6 @@ use App\Http\Controllers\Api\TimeseriesController;
 use App\Http\Controllers\Api\NightowlUserController;
 use App\Http\Controllers\Api\OrgController;
 use App\Http\Controllers\Api\RollupController;
-use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\TelemetryController;
 use App\Http\Controllers\Api\UserDetailController;
 use Illuminate\Support\Facades\Route;
@@ -36,11 +35,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Per-app settings + onboarding templates (docs/pages/settings.md).
         Route::get('/settings', [AppSettingController::class, 'index']);
+        Route::put('/settings/{key}', [AppSettingController::class, 'updateSetting']);
         Route::put('/environments/{name}', [AppSettingController::class, 'updateEnvironment']);
         Route::post('/token/regenerate', [AppSettingController::class, 'regenerateToken']);
         Route::get('/templates', [AppSettingController::class, 'templates']);
         Route::post('/templates/sync', [AppSettingController::class, 'syncTemplate']);
         Route::post('/templates/apply', [AppSettingController::class, 'applyTemplate']);
+
+        // Per-app alert channels (docs/pages/settings.md "Alerts" tab).
+        Route::apiResource('alert-channels', AlertChannelController::class)
+            ->except(['show'])
+            ->parameters(['alert-channels' => 'alertChannel']);
+        Route::post('/alert-channels/{alertChannel}/toggle', [AlertChannelController::class, 'toggle']);
 
         // Aggregated list pages (per route/job/query/host/key/…). Registered
         // before the generic {resource} catch-all; 'aggregate' isn't a
@@ -54,6 +60,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/issues/{issue}', [IssueActionController::class, 'show']);
         Route::post('/issues/{issue}/assign', [IssueActionController::class, 'assign']);
         Route::post('/issues/{issue}/priority', [IssueActionController::class, 'priority']);
+        Route::post('/issues/{issue}/resolve', [IssueActionController::class, 'resolve']);
+        Route::post('/issues/{issue}/ignore', [IssueActionController::class, 'ignore']);
+        Route::post('/issues/{issue}/reopen', [IssueActionController::class, 'reopen']);
+        Route::get('/issues/{issue}/comments', [IssueActionController::class, 'comments']);
+        Route::post('/issues/{issue}/comments', [IssueActionController::class, 'storeComment']);
 
         // Per-user drill-down ('users' isn't a telemetry resource key, so no
         // clash with the generic catch-all below).
@@ -72,24 +83,11 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereNumber('id');
     });
 
-    // --- Not-yet-app-scoped surfaces (feature workstreams W6/W7/W11 nest
-    // these under apps/{app} as they build the real per-app controllers).
+    // --- Not-yet-app-scoped surfaces (legacy; superseded per-app equivalents
+    // exist above — /users/{userId} -> UserDetailController, /rollups ->
+    // AggregateController — but these remain for any lingering callers).
     Route::get('/users', [NightowlUserController::class, 'index']);
     Route::get('/users/{userId}', [NightowlUserController::class, 'show']);
 
-    Route::apiResource('alert-channels', AlertChannelController::class)
-        ->except(['show'])
-        ->parameters(['alert-channels' => 'alertChannel']);
-    Route::post('/alert-channels/{alertChannel}/toggle', [AlertChannelController::class, 'toggle']);
-
-    Route::get('/settings', [SettingController::class, 'index']);
-    Route::put('/settings/{key}', [SettingController::class, 'update']);
-
     Route::get('/rollups/{type}', [RollupController::class, 'index']);
-
-    Route::post('/issues/{issue}/resolve', [IssueActionController::class, 'resolve']);
-    Route::post('/issues/{issue}/ignore', [IssueActionController::class, 'ignore']);
-    Route::post('/issues/{issue}/reopen', [IssueActionController::class, 'reopen']);
-    Route::get('/issues/{issue}/comments', [IssueActionController::class, 'comments']);
-    Route::post('/issues/{issue}/comments', [IssueActionController::class, 'storeComment']);
 });

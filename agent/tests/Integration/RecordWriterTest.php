@@ -2,8 +2,10 @@
 
 namespace NightOwl\Tests\Integration;
 
+use NightOwl\Agent\AlertNotifier;
 use NightOwl\Agent\RecordWriter;
 use NightOwl\Simulator\NightwatchSimulator;
+use NightOwl\Support\QueryHistogram;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -443,11 +445,11 @@ class RecordWriterTest extends TestCase
         )->fetchAll(PDO::FETCH_ASSOC);
 
         $rollup = self::$pdo->query(
-            "SELECT group_hash AS gh, connection AS conn,
+            'SELECT group_hash AS gh, connection AS conn,
                     SUM(call_count) AS c, SUM(total_duration) AS s,
                     MIN(min_duration) AS mn, MAX(max_duration) AS mx
              FROM nightowl_query_rollups
-             GROUP BY 1, 2 ORDER BY 1, 2"
+             GROUP BY 1, 2 ORDER BY 1, 2'
         )->fetchAll(PDO::FETCH_ASSOC);
 
         $this->assertEquals($raw, $rollup, 'Rollup aggregates must match a raw re-aggregation exactly');
@@ -496,7 +498,7 @@ class RecordWriterTest extends TestCase
         }
         $this->writer->write($records);
 
-        $case = \NightOwl\Support\QueryHistogram::caseSql('duration');
+        $case = QueryHistogram::caseSql('duration');
         $rawSelect = [];
         foreach ($case as $col => $expr) {
             $rawSelect[] = "{$expr} as {$col}";
@@ -1246,7 +1248,7 @@ class RecordWriterTest extends TestCase
         $writer = new RecordWriter(
             self::$host, self::$port, self::$database, self::$username, self::$password,
             86400,
-            new \NightOwl\Agent\AlertNotifier(86400, '', null, 24),
+            new AlertNotifier(86400, '', null, 24),
         );
 
         $writer->write([$this->sim->makeException(array_merge($base, ['trace_id' => 'c1']))]);
@@ -1265,6 +1267,54 @@ class RecordWriterTest extends TestCase
 
         $reopenLog = self::$pdo->query("SELECT 1 FROM nightowl_issue_activity WHERE issue_id = {$issueId} AND actor_type = 'agent'")->fetchColumn();
         $this->assertFalse($reopenLog, 'No activity row should be written when cooldown suppresses the flip');
+    }
+
+    // ─── App-scoped thresholds / alert channels ────────────
+
+    /**
+     * `nightowl_settings` moved to a composite (app_id, key) unique constraint
+     * (migration 000057), so two apps can each have their own 'thresholds'
+     * row. getThresholds() must only ever pick up the row for the notifier's
+     * own app_id.
+     */
+    public function test_get_thresholds_is_scoped_to_notifiers_app_id(): void
+    {
+        $stmt = self::$pdo->prepare(
+            "INSERT INTO nightowl_settings (app_id, key, value) VALUES (:app_id, 'thresholds', :value)"
+        );
+        $stmt->execute(['app_id' => 'app_a', 'value' => json_encode([['type' => 'route', 'target' => '/a', 'duration_ms' => 100]])]);
+        $stmt->execute(['app_id' => 'app_b', 'value' => json_encode([['type' => 'route', 'target' => '/b', 'duration_ms' => 200]])]);
+
+        $notifier = new AlertNotifier(appId: 'app_b');
+        $writer = new RecordWriter(self::$host, self::$port, self::$database, self::$username, self::$password, 86400, $notifier);
+
+        $method = new \ReflectionMethod($writer, 'getThresholds');
+        $thresholds = $method->invoke($writer);
+
+        $this->assertCount(1, $thresholds['route']);
+        $this->assertSame('/b', $thresholds['route'][0]['target']);
+        $this->assertSame(200, $thresholds['route'][0]['duration_ms']);
+    }
+
+    /**
+     * `nightowl_alert_channels` also gained app_id in migration 000057.
+     * AlertNotifier::loadChannels() must only return channels for its own
+     * app_id when one is configured (NIGHTOWL_APP_ID set).
+     */
+    public function test_alert_notifier_load_channels_is_scoped_to_app_id(): void
+    {
+        $stmt = self::$pdo->prepare(
+            "INSERT INTO nightowl_alert_channels (app_id, name, type, config, enabled) VALUES (:app_id, :name, 'slack', :config, true)"
+        );
+        $stmt->execute(['app_id' => 'app_a', 'name' => 'A Channel', 'config' => json_encode(['webhook_url' => 'https://hooks.slack.com/a'])]);
+        $stmt->execute(['app_id' => 'app_b', 'name' => 'B Channel', 'config' => json_encode(['webhook_url' => 'https://hooks.slack.com/b'])]);
+
+        $notifier = new AlertNotifier(appId: 'app_b');
+        $method = new \ReflectionMethod($notifier, 'loadChannels');
+        $channels = $method->invoke($notifier, self::$pdo);
+
+        $this->assertCount(1, $channels);
+        $this->assertSame('B Channel', $channels[0]['name']);
     }
 
     // ─── Batch stress ──────────────────────────────────────

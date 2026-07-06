@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\AuthorizesAppScope;
 use App\Http\Controllers\Controller;
 use App\Models\App;
 use App\Models\Telemetry\ExceptionRecord;
 use App\Models\Telemetry\Issue;
 use App\Models\Telemetry\IssueActivity;
-use App\Models\Telemetry\IssueComment;
 use Illuminate\Http\Request;
 
 class IssueActionController extends Controller
 {
+    use AuthorizesAppScope;
+
     /**
      * Full issue drill-down (docs/pages/issue-detail.md): representative
      * exception + stack trace, recent occurrences, per-environment breakdown,
@@ -20,6 +22,8 @@ class IssueActionController extends Controller
      */
     public function show(App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         $occurrenceQuery = fn () => ExceptionRecord::query()->forApp($app->app_id)
             ->when(
                 $issue->group_hash,
@@ -71,6 +75,8 @@ class IssueActionController extends Controller
 
     public function assign(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         $data = $request->validate(['assigned_to' => ['nullable', 'string']]);
         $old = $issue->assigned_to;
         $issue->update(['assigned_to' => $data['assigned_to'] ?? null]);
@@ -81,6 +87,8 @@ class IssueActionController extends Controller
 
     public function priority(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         $data = $request->validate(['priority' => ['required', 'string']]);
         $old = $issue->priority;
         $issue->update(['priority' => $data['priority']]);
@@ -127,28 +135,38 @@ class IssueActionController extends Controller
         ]);
     }
 
-    public function resolve(Request $request, Issue $issue)
+    public function resolve(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         return $this->transition($request, $issue, 'resolved');
     }
 
-    public function ignore(Request $request, Issue $issue)
+    public function ignore(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         return $this->transition($request, $issue, 'ignored');
     }
 
-    public function reopen(Request $request, Issue $issue)
+    public function reopen(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         return $this->transition($request, $issue, 'open');
     }
 
-    public function comments(Issue $issue)
+    public function comments(App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         return response()->json($issue->comments()->get());
     }
 
-    public function storeComment(Request $request, Issue $issue)
+    public function storeComment(Request $request, App $app, Issue $issue)
     {
+        $this->authorizeAppOwned($app, $issue);
+
         $data = $request->validate([
             'body' => ['required', 'string'],
         ]);

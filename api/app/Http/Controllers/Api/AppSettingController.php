@@ -4,22 +4,26 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\App;
+use App\Models\Telemetry\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
- * Per-app settings hub (docs/pages/settings.md): detected environments +
+ * Per-app settings hub (docs/pages/settings.md): the free-form key/value
+ * settings map (nightowl_settings, scoped by app_id), detected environments +
  * colors, the agent token, and the onboarding-template system (sync / apply).
- * Backed by the App model + templates table (primary DB), not the global
- * nightowl_settings table.
  */
 class AppSettingController extends Controller
 {
+    private const RESERVED_KEYS = ['app_id', 'name', 'description', 'environments', 'agent_token_masked', 'template'];
+
     public function index(App $app)
     {
         $template = $app->templates()->latest('synced_at')->first();
 
-        return response()->json([
+        $settings = Setting::query()->forApp($app->app_id)->pluck('value', 'key')->all();
+
+        return response()->json(array_merge($settings, [
             'app_id' => $app->app_id,
             'name' => $app->name,
             'description' => $app->description,
@@ -29,7 +33,21 @@ class AppSettingController extends Controller
                 'name' => $template->name,
                 'synced_at' => optional($template->synced_at)->toIso8601String(),
             ] : null,
-        ]);
+        ]));
+    }
+
+    public function updateSetting(Request $request, App $app, string $key)
+    {
+        abort_if(in_array($key, self::RESERVED_KEYS, true), 422, "'{$key}' is a reserved setting key.");
+
+        $data = $request->validate(['value' => ['required', 'string']]);
+
+        Setting::query()->updateOrCreate(
+            ['app_id' => $app->app_id, 'key' => $key],
+            ['value' => $data['value']],
+        );
+
+        return response()->json(['key' => $key, 'value' => $data['value']]);
     }
 
     public function updateEnvironment(Request $request, App $app, string $name)

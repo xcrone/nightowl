@@ -59,6 +59,67 @@ class IssueUserDetailTest extends TestCase
         $this->assertDatabaseHas('nightowl_issue_activity', ['issue_id' => $issue->id, 'action' => 'priority_changed', 'new_value' => 'high'], 'nightowl');
     }
 
+    public function test_resolve_reopen_and_ignore_transitions_are_app_scoped_routes(): void
+    {
+        $user = User::factory()->create();
+        $issue = Issue::factory()->create(['app_id' => 'det_app', 'status' => 'open']);
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/det_app/issues/{$issue->id}/resolve")
+            ->assertOk()
+            ->assertJsonPath('status', 'resolved');
+
+        $this->assertDatabaseHas('nightowl_issue_activity', [
+            'issue_id' => $issue->id, 'action' => 'status_changed',
+            'old_value' => 'open', 'new_value' => 'resolved',
+        ], 'nightowl');
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/det_app/issues/{$issue->id}/reopen")
+            ->assertOk()
+            ->assertJsonPath('status', 'open');
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/det_app/issues/{$issue->id}/ignore")
+            ->assertOk()
+            ->assertJsonPath('status', 'ignored');
+    }
+
+    public function test_can_comment_on_an_issue_via_app_scoped_route(): void
+    {
+        $user = User::factory()->create();
+        $issue = Issue::factory()->create(['app_id' => 'det_app']);
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/det_app/issues/{$issue->id}/comments", ['body' => 'Investigating.'])
+            ->assertCreated()
+            ->assertJsonPath('body', 'Investigating.');
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/det_app/issues/{$issue->id}/comments")
+            ->assertOk()
+            ->assertJsonCount(1);
+    }
+
+    public function test_issue_actions_404_when_hit_through_the_wrong_apps_url(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('other_app');
+        $issue = Issue::factory()->create(['app_id' => 'det_app']);
+
+        $this->actingAs($user)->getJson("/api/apps/other_app/issues/{$issue->id}")->assertNotFound();
+
+        $this->actingAs($user)->postJson("/api/apps/other_app/issues/{$issue->id}/resolve")->assertNotFound();
+
+        $this->actingAs($user)->postJson("/api/apps/other_app/issues/{$issue->id}/assign", ['assigned_to' => 'alice'])
+            ->assertNotFound();
+
+        $this->actingAs($user)->postJson("/api/apps/other_app/issues/{$issue->id}/comments", ['body' => 'Nope.'])
+            ->assertNotFound();
+
+        $this->actingAs($user)->getJson("/api/apps/other_app/issues/{$issue->id}/comments")->assertNotFound();
+    }
+
     public function test_user_detail_aggregates_requests_and_routes(): void
     {
         $user = User::factory()->create();

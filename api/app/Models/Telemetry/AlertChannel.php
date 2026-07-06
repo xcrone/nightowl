@@ -8,7 +8,7 @@ class AlertChannel extends TelemetryRecord
 
     public $timestamps = true;
 
-    protected $fillable = ['name', 'type', 'config', 'enabled'];
+    protected $fillable = ['app_id', 'name', 'type', 'config', 'enabled'];
 
     protected $casts = [
         'config' => 'array',

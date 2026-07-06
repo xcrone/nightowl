@@ -1599,9 +1599,17 @@ final class RecordWriter
             $this->thresholdVersionCheckAt = $now + 30;
 
             try {
-                $updatedAt = $this->pdo()->query(
-                    "SELECT updated_at FROM nightowl_settings WHERE key = 'thresholds'"
-                )->fetchColumn() ?: null;
+                if ($this->notifier->appId() !== null) {
+                    $stmt = $this->pdo()->prepare(
+                        "SELECT updated_at FROM nightowl_settings WHERE key = 'thresholds' AND app_id = :app_id"
+                    );
+                    $stmt->execute(['app_id' => $this->notifier->appId()]);
+                    $updatedAt = $stmt->fetchColumn() ?: null;
+                } else {
+                    $updatedAt = $this->pdo()->query(
+                        "SELECT updated_at FROM nightowl_settings WHERE key = 'thresholds'"
+                    )->fetchColumn() ?: null;
+                }
 
                 if ($updatedAt === $this->thresholdUpdatedAt) {
                     return $this->thresholdCache;
@@ -1617,9 +1625,17 @@ final class RecordWriter
         $this->thresholdVersionCheckAt = $now + 30;
 
         try {
-            $row = $this->pdo()->query(
-                "SELECT value, updated_at FROM nightowl_settings WHERE key = 'thresholds'"
-            )->fetch(PDO::FETCH_ASSOC);
+            if ($this->notifier->appId() !== null) {
+                $stmt = $this->pdo()->prepare(
+                    "SELECT value, updated_at FROM nightowl_settings WHERE key = 'thresholds' AND app_id = :app_id"
+                );
+                $stmt->execute(['app_id' => $this->notifier->appId()]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            } else {
+                $row = $this->pdo()->query(
+                    "SELECT value, updated_at FROM nightowl_settings WHERE key = 'thresholds'"
+                )->fetch(PDO::FETCH_ASSOC);
+            }
 
             $this->thresholdUpdatedAt = is_array($row) ? ($row['updated_at'] ?? null) : null;
 

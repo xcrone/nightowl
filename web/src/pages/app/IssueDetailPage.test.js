@@ -69,13 +69,21 @@ describe('IssueDetailPage', () => {
     expect(wrapper.text()).toContain('Unhandled')
   })
 
-  it('posts a comment to the top-level issues route', async () => {
+  it('posts a comment to the app-scoped issues route', async () => {
     const wrapper = await mountPage()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('needs a retry')
     const btn = wrapper.findAll('button').find((b) => b.text() === 'Comment')
     await btn.trigger('click')
     await flushPromises()
-    expect(api.post).toHaveBeenCalledWith('/api/issues/5/comments', { body: 'needs a retry' })
+    expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/comments', { body: 'needs a retry' })
+  })
+
+  it('posts status actions to the app-scoped issues route', async () => {
+    const wrapper = await mountPage()
+    const btn = wrapper.findAll('button').find((b) => b.text() === 'Resolve')
+    await btn.trigger('click')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/resolve')
   })
 })

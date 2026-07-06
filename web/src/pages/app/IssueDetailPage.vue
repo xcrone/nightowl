@@ -9,8 +9,7 @@ import StatPanel from '../../components/StatPanel.vue'
 
 // Full drill-down for one deduplicated issue: stack trace, occurrences,
 // per-environment breakdown, and an activity/comment thread.
-// GET /api/apps/{appId}/issues/{id}. NOTE: comments + resolve/ignore/reopen
-// are TOP-LEVEL routes (/api/issues/{id}/…), assign/priority stay app-scoped.
+// GET /api/apps/{appId}/issues/{id}.
 const route = useRoute()
 const app = useAppStore()
 
@@ -57,7 +56,7 @@ async function load() {
 
 async function loadComments() {
   try {
-    const { data } = await api.get(`/api/issues/${issueId.value}/comments`)
+    const { data } = await api.get(`/api/apps/${appId.value}/issues/${issueId.value}/comments`)
     state.comments = data.data ?? data.comments ?? []
   } catch {
     state.comments = []
@@ -125,7 +124,7 @@ async function submitComment() {
   if (!commentBody.value.trim() || posting.value) return
   posting.value = true
   try {
-    await api.post(`/api/issues/${issueId.value}/comments`, { body: commentBody.value })
+    await api.post(`/api/apps/${appId.value}/issues/${issueId.value}/comments`, { body: commentBody.value })
     commentBody.value = ''
     commentTab.value = 'write'
     await loadComments()
@@ -138,7 +137,7 @@ async function submitComment() {
 
 async function statusAction(action) {
   try {
-    await api.post(`/api/issues/${issueId.value}/${action}`)
+    await api.post(`/api/apps/${appId.value}/issues/${issueId.value}/${action}`)
     await load()
   } catch { /* demo no-op */ }
 }

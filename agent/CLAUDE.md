@@ -108,7 +108,7 @@ src/Commands/
 
 ## Database
 
-56 migrations, 22 tables (12 telemetry + 3 issues + alert_channels/settings + 5 rollups). The last migration adds a nullable, indexed `app_id` string to every telemetry/issue/rollup table so the dashboard can scope a single shared Postgres to multiple apps (see api/'s per-app routes); the agent runtime doesn't stamp it — it's backfilled/seeded on the dashboard side.
+57 migrations, 22 tables (12 telemetry + 3 issues + alert_channels/settings + 5 rollups). The second-to-last migration adds a nullable, indexed `app_id` string to every telemetry/issue/rollup table so the dashboard can scope a single shared Postgres to multiple apps (see api/'s per-app routes); the agent runtime doesn't stamp it — it's backfilled/seeded on the dashboard side. The last migration adds the same `app_id` column to `nightowl_settings`/`nightowl_alert_channels`, which the earlier migration missed.
 
 - **Telemetry**: requests, queries, exceptions, commands, jobs, cache_events, mail, notifications, outgoing_requests, scheduled_tasks, logs, users
 - **Rollups**: query_rollups, request_rollups, job_rollups, outgoing_request_rollups, cache_rollups — pre-aggregated per-minute summaries maintained at drain time. Driven by a declarative `RollupSpec` per type (`src/Support/RollupSpecs.php`) consumed by the generic `RecordWriter::writeRollup`, `nightowl:backfill-rollups`, and `PruneCommand`. Duration-bearing types carry √2-spaced `hist_NN` histogram bins for approximate windowed percentiles (`src/Support/QueryHistogram.php`); cache groups by `(key, store)` with no histogram. Queries keeps a bespoke drain path (`writeQueryRollups`) but shares the generic backfill/prune. See `specs/query_rollups.md`.

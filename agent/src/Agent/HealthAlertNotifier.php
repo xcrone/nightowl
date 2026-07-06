@@ -37,6 +37,7 @@ final class HealthAlertNotifier
         private string $password,
         private string $appName = 'NightOwl',
         private string $instanceId = '',
+        private ?string $appId = null,
     ) {}
 
     public static function fromConfig(string $instanceId = ''): self
@@ -45,12 +46,18 @@ final class HealthAlertNotifier
         $port = (int) config('nightowl.database.port', 5432);
         $database = config('nightowl.database.database', 'nightowl');
 
+        // Fall back to env() when the config key is absent — keeps NIGHTOWL_APP_ID
+        // working for customers whose published config/nightowl.php predates the
+        // app_id key, so they don't have to re-run vendor:publish on upgrade.
+        $appId = config('nightowl.agent.app_id') ?? env('NIGHTOWL_APP_ID');
+
         return new self(
             "pgsql:host={$host};port={$port};dbname={$database}",
             config('nightowl.database.username', 'nightowl'),
             config('nightowl.database.password', 'nightowl'),
             config('app.name', 'NightOwl'),
             $instanceId,
+            is_string($appId) && $appId !== '' ? $appId : null,
         );
     }
 
@@ -145,9 +152,17 @@ final class HealthAlertNotifier
             $this->channelVersionCheckAt = $now + 30;
 
             try {
-                $fingerprint = $this->pdo()->query(
-                    "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true"
-                )->fetchColumn();
+                if ($this->appId !== null) {
+                    $stmt = $this->pdo()->prepare(
+                        "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true AND app_id = :app_id"
+                    );
+                    $stmt->execute(['app_id' => $this->appId]);
+                    $fingerprint = $stmt->fetchColumn();
+                } else {
+                    $fingerprint = $this->pdo()->query(
+                        "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true"
+                    )->fetchColumn();
+                }
 
                 if ($fingerprint === $this->channelFingerprint) {
                     return $this->channelCache;
@@ -162,9 +177,17 @@ final class HealthAlertNotifier
         $this->channelCacheExpiry = $now + self::CHANNEL_CACHE_TTL;
         $this->channelVersionCheckAt = $now + 30;
 
-        $rows = $this->pdo()->query(
-            'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true'
-        )->fetchAll(PDO::FETCH_ASSOC);
+        if ($this->appId !== null) {
+            $stmt = $this->pdo()->prepare(
+                'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true AND app_id = :app_id'
+            );
+            $stmt->execute(['app_id' => $this->appId]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $rows = $this->pdo()->query(
+                'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true'
+            )->fetchAll(PDO::FETCH_ASSOC);
+        }
 
         $maxUpdatedAt = '';
         foreach ($rows as $row) {

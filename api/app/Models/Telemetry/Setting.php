@@ -8,5 +8,5 @@ class Setting extends TelemetryRecord
 
     public $timestamps = true;
 
-    protected $fillable = ['key', 'value'];
+    protected $fillable = ['app_id', 'key', 'value'];
 }

@@ -2,31 +2,40 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\AuthorizesAppScope;
 use App\Http\Controllers\Controller;
+use App\Models\App;
 use App\Models\Telemetry\AlertChannel;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class AlertChannelController extends Controller
 {
+    use AuthorizesAppScope;
+
     protected const TYPES = ['slack', 'discord', 'webhook', 'email'];
 
-    public function index()
+    public function index(App $app)
     {
-        return response()->json(AlertChannel::query()->orderBy('name')->get());
+        return response()->json(
+            AlertChannel::query()->forApp($app->app_id)->orderBy('name')->get()
+        );
     }
 
-    public function store(Request $request)
+    public function store(Request $request, App $app)
     {
         $data = $this->validated($request);
+        $data['app_id'] = $app->app_id;
 
         $channel = AlertChannel::create($data);
 
         return response()->json($channel, 201);
     }
 
-    public function update(Request $request, AlertChannel $alertChannel)
+    public function update(Request $request, App $app, AlertChannel $alertChannel)
     {
+        $this->authorizeAppOwned($app, $alertChannel);
+
         $data = $this->validated($request, $alertChannel);
 
         $alertChannel->update($data);
@@ -34,15 +43,19 @@ class AlertChannelController extends Controller
         return response()->json($alertChannel);
     }
 
-    public function destroy(AlertChannel $alertChannel)
+    public function destroy(App $app, AlertChannel $alertChannel)
     {
+        $this->authorizeAppOwned($app, $alertChannel);
+
         $alertChannel->delete();
 
         return response()->noContent();
     }
 
-    public function toggle(AlertChannel $alertChannel)
+    public function toggle(App $app, AlertChannel $alertChannel)
     {
+        $this->authorizeAppOwned($app, $alertChannel);
+
         $alertChannel->update(['enabled' => ! $alertChannel->enabled]);
 
         return response()->json($alertChannel);

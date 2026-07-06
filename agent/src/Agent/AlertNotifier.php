@@ -58,6 +58,11 @@ final class AlertNotifier
         return $this->reopenCooldownHours;
     }
 
+    public function appId(): ?string
+    {
+        return $this->appId;
+    }
+
     /**
      * Stage 1: Call BEFORE the issue upsert to classify existing fingerprints.
      *
@@ -363,9 +368,17 @@ final class AlertNotifier
             $this->channelVersionCheckAt = $now + 30;
 
             try {
-                $fingerprint = $pdo->query(
-                    "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true"
-                )->fetchColumn();
+                if ($this->appId !== null) {
+                    $stmt = $pdo->prepare(
+                        "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true AND app_id = :app_id"
+                    );
+                    $stmt->execute(['app_id' => $this->appId]);
+                    $fingerprint = $stmt->fetchColumn();
+                } else {
+                    $fingerprint = $pdo->query(
+                        "SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text, '') FROM nightowl_alert_channels WHERE enabled = true"
+                    )->fetchColumn();
+                }
 
                 if ($fingerprint === $this->channelFingerprint) {
                     return $this->channelCache;
@@ -381,9 +394,17 @@ final class AlertNotifier
         $this->channelVersionCheckAt = $now + 30;
 
         try {
-            $rows = $pdo->query(
-                'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true'
-            )->fetchAll(PDO::FETCH_ASSOC);
+            if ($this->appId !== null) {
+                $stmt = $pdo->prepare(
+                    'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true AND app_id = :app_id'
+                );
+                $stmt->execute(['app_id' => $this->appId]);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } else {
+                $rows = $pdo->query(
+                    'SELECT type, name, config, updated_at FROM nightowl_alert_channels WHERE enabled = true'
+                )->fetchAll(PDO::FETCH_ASSOC);
+            }
 
             $maxUpdatedAt = '';
             foreach ($rows as $row) {

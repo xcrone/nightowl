@@ -68,7 +68,7 @@ function normalizeEnvs(envs) {
 
 async function loadAlertChannels() {
   try {
-    const { data } = await api.get('/api/alert-channels')
+    const { data } = await api.get(`/api/apps/${appId.value}/alert-channels`)
     alertChannels.list = data.data ?? data ?? []
   } catch {
     alertChannels.list = []
