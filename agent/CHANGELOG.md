@@ -5,6 +5,30 @@ version is taken from the git tag. Entries for `1.0.x` and earlier are
 reconstructed from the annotated release tags; pre-`1.0` (`0.1.x`) history lives
 in the git tags.
 
+## [Unreleased]
+
+### Added
+
+- **Search-ready schema for full-text/substring queries.** 16 new migrations add
+  `pg_trgm` (extension) plus a GIN trigram index per identifier-like column —
+  URLs, route names, SQL text, class names, cache keys, and similar — across 11
+  telemetry/issue tables, so `ILIKE '%...%'` substring search is index-backed
+  instead of a sequential scan. Prose columns (`nightowl_logs.message` +
+  `context` + `extra`, `nightowl_exceptions.message`,
+  `nightowl_issues.exception_message` + `description`) get a generated
+  `search_vector` `tsvector` column (`STORED`, via a small custom
+  `nightowl_immutable_to_tsvector()` SQL function, since Postgres's built-in
+  `to_tsvector(regconfig, text)` is `STABLE` and can't back a generated column
+  directly) plus its own GIN index, for word-stemmed matching. Schema only —
+  the agent doesn't query these columns itself; `nightowl-api`'s
+  `TelemetryController::applySearch()` is the consumer, driven by
+  `config/telemetry.php`'s per-resource `search` key. Applied on the next
+  `php artisan nightowl:migrate`; the `ADD COLUMN ... GENERATED ... STORED`
+  migrations rewrite the whole table under an `ACCESS EXCLUSIVE` lock
+  (comparable to a plain index build's lock but proportional to current row
+  count), so run them in a deploy window on an install with unusually large
+  `nightowl_logs`/`nightowl_exceptions`/`nightowl_issues` retention.
+
 ## [1.2.5] - 2026-06-29
 
 ### Added

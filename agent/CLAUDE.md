@@ -108,12 +108,13 @@ src/Commands/
 
 ## Database
 
-37 migrations, 22 tables (12 telemetry + 3 issues + alert_channels/settings + 5 rollups):
+55 migrations, 22 tables (12 telemetry + 3 issues + alert_channels/settings + 5 rollups):
 
 - **Telemetry**: requests, queries, exceptions, commands, jobs, cache_events, mail, notifications, outgoing_requests, scheduled_tasks, logs, users
 - **Rollups**: query_rollups, request_rollups, job_rollups, outgoing_request_rollups, cache_rollups — pre-aggregated per-minute summaries maintained at drain time. Driven by a declarative `RollupSpec` per type (`src/Support/RollupSpecs.php`) consumed by the generic `RecordWriter::writeRollup`, `nightowl:backfill-rollups`, and `PruneCommand`. Duration-bearing types carry √2-spaced `hist_NN` histogram bins for approximate windowed percentiles (`src/Support/QueryHistogram.php`); cache groups by `(key, store)` with no histogram. Queries keeps a bespoke drain path (`writeQueryRollups`) but shares the generic backfill/prune. See `specs/query_rollups.md`.
 - **Issues**: issues (fingerprint upsert, subtype: exception/performance/health, threshold_metrics, deploy), issue_activity (with `actor_type`/`actor_meta` for MCP), issue_comments (with actor columns)
 - **Alerts**: alert_channels, settings
+- **Search**: `pg_trgm` extension + a GIN trigram index per identifier-like column (URLs, SQL text, class names, cache keys, ...) across 11 telemetry/issue tables, for substring `ILIKE '%...%'` matching. Prose columns (`nightowl_logs.message`+`context`+`extra`, `nightowl_exceptions.message`, `nightowl_issues.exception_message`+`description`) instead get a `search_vector` `tsvector` **generated column** (`STORED`, via a custom `nightowl_immutable_to_tsvector()` SQL function — Postgres's built-in `to_tsvector(regconfig, text)` is `STABLE`, not `IMMUTABLE`, so it can't back a generated column directly) plus its own GIN index, for word-stemmed matching. Consumed by `api/`'s `TelemetryController::applySearch()` via `config/telemetry.php`'s per-resource `search` key — the agent only owns the schema, not the query logic.
 
 **DB connection name**: `nightowl` (registered by service provider).
 
