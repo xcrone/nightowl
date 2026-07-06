@@ -2,6 +2,7 @@
 import { reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../store/app'
+import { useAuthStore } from '../../store/auth'
 import api from '../../services/api'
 import { relativeTime } from '../../utils/format'
 import { BADGE } from '../../resourceConfig'
@@ -13,6 +14,7 @@ import { debounce } from '../../utils/debounce'
 const route = useRoute()
 const router = useRouter()
 const app = useAppStore()
+const auth = useAuthStore()
 
 const appId = computed(() => route.params.appId)
 
@@ -57,10 +59,10 @@ async function load() {
 }
 
 // Assignment is a client-side filter over the loaded rows: Unassigned =
-// assigned_to null; Mine is a demo stub (no auth user id handy).
+// assigned_to null; Mine = assigned_to matches the logged-in user's email.
 const displayRows = computed(() => {
   if (state.assignment === 'unassigned') return state.rows.filter((r) => !r.assigned_to)
-  if (state.assignment === 'mine') return state.rows.filter((r) => r.assigned_to)
+  if (state.assignment === 'mine') return state.rows.filter((r) => r.assigned_to === auth.user?.email)
   return state.rows
 })
 
