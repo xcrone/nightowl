@@ -47,11 +47,16 @@ class TelemetryApiTest extends TestCase
         foreach (['nightowl_requests', 'nightowl_exceptions', 'nightowl_issues', 'nightowl_logs', 'nightowl_queries'] as $table) {
             DB::connection('nightowl')->table($table)->delete();
         }
+
+        // Everything is app-scoped now: seed the app whose app_id the
+        // telemetry factories stamp ('test_app'), so /api/apps/test_app/…
+        // route binding resolves and factory rows fall inside the scope.
+        $this->seedApp('test_app');
     }
 
     public function test_unauthenticated_request_is_rejected(): void
     {
-        $this->getJson('/api/requests')->assertUnauthorized();
+        $this->getJson('/api/apps/test_app/requests')->assertUnauthorized();
     }
 
     public function test_unknown_resource_is_not_found(): void
@@ -59,7 +64,7 @@ class TelemetryApiTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->getJson('/api/not-a-real-resource')
+            ->getJson('/api/apps/test_app/not-a-real-resource')
             ->assertNotFound();
     }
 
@@ -68,7 +73,7 @@ class TelemetryApiTest extends TestCase
         $user = User::factory()->create();
         RequestRecord::factory()->count(3)->create();
 
-        $response = $this->actingAs($user)->getJson('/api/requests');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests');
 
         $response->assertOk();
         $this->assertCount(3, $response->json('data'));
@@ -80,7 +85,7 @@ class TelemetryApiTest extends TestCase
         $record = RequestRecord::factory()->create(['method' => 'POST']);
 
         $this->actingAs($user)
-            ->getJson("/api/requests/{$record->id}")
+            ->getJson("/api/apps/test_app/requests/{$record->id}")
             ->assertOk()
             ->assertJsonPath('method', 'POST');
     }
@@ -91,7 +96,7 @@ class TelemetryApiTest extends TestCase
         RequestRecord::factory()->create(['status_code' => 200]);
         $failing = RequestRecord::factory()->create(['status_code' => 500]);
 
-        $response = $this->actingAs($user)->getJson('/api/requests?failed=1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?failed=1');
 
         $response->assertOk();
         $ids = array_column($response->json('data'), 'id');
@@ -104,7 +109,7 @@ class TelemetryApiTest extends TestCase
         RequestRecord::factory()->create(['duration' => 500 * 1000]);
         $slow = RequestRecord::factory()->create(['duration' => 2000 * 1000]);
 
-        $response = $this->actingAs($user)->getJson('/api/requests?slow=1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?slow=1');
 
         $response->assertOk();
         $ids = array_column($response->json('data'), 'id');
@@ -117,7 +122,7 @@ class TelemetryApiTest extends TestCase
         RequestRecord::factory()->create(['exceptions' => 0]);
         $withException = RequestRecord::factory()->create(['exceptions' => 2]);
 
-        $response = $this->actingAs($user)->getJson('/api/requests?has_exceptions=1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?has_exceptions=1');
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$withException->id], $ids);
@@ -129,7 +134,7 @@ class TelemetryApiTest extends TestCase
         ExceptionRecord::factory()->create(['handled' => true]);
         $unhandled = ExceptionRecord::factory()->create(['handled' => false]);
 
-        $response = $this->actingAs($user)->getJson('/api/exceptions?unhandled_only=1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/exceptions?unhandled_only=1');
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$unhandled->id], $ids);
@@ -141,7 +146,7 @@ class TelemetryApiTest extends TestCase
         Issue::factory()->create(['status' => 'resolved']);
         $open = Issue::factory()->create(['status' => 'open']);
 
-        $response = $this->actingAs($user)->getJson('/api/issues?status=open');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?status=open');
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$open->id], $ids);
@@ -153,7 +158,7 @@ class TelemetryApiTest extends TestCase
         LogRecord::factory()->create(['level' => 'info']);
         $error = LogRecord::factory()->create(['level' => 'error']);
 
-        $response = $this->actingAs($user)->getJson('/api/logs?level=error');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/logs?level=error');
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$error->id], $ids);
@@ -165,7 +170,7 @@ class TelemetryApiTest extends TestCase
         RequestRecord::factory()->create();
 
         $this->actingAs($user)
-            ->getJson('/api/requests?sort=some_unsortable_column')
+            ->getJson('/api/apps/test_app/requests?sort=some_unsortable_column')
             ->assertOk();
     }
 
@@ -175,7 +180,7 @@ class TelemetryApiTest extends TestCase
         LogRecord::factory()->create(['message' => 'database connection timed out']);
         $match = LogRecord::factory()->create(['message' => 'payment webhook failed to process']);
 
-        $response = $this->actingAs($user)->getJson('/api/logs?q=webhook');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/logs?q=webhook');
 
         $response->assertOk();
         $ids = array_column($response->json('data'), 'id');
@@ -190,7 +195,7 @@ class TelemetryApiTest extends TestCase
 
         // Substring match mid-identifier — this is exactly what trigram (not
         // tsvector word-stemming) is for; "line_item" isn't a whole token.
-        $response = $this->actingAs($user)->getJson('/api/queries?q=line_item');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/queries?q=line_item');
 
         $response->assertOk();
         $ids = array_column($response->json('data'), 'id');
@@ -204,11 +209,11 @@ class TelemetryApiTest extends TestCase
         $byMessage = ExceptionRecord::factory()->create(['class' => 'RuntimeException', 'message' => 'the database connection was refused']);
         $byClass = ExceptionRecord::factory()->create(['class' => 'App\\Exceptions\\PaymentDeclinedException', 'message' => 'unrelated']);
 
-        $response = $this->actingAs($user)->getJson('/api/exceptions?q=connection');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/exceptions?q=connection');
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$byMessage->id], $ids);
 
-        $response = $this->actingAs($user)->getJson('/api/exceptions?q=PaymentDeclined');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/exceptions?q=PaymentDeclined');
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$byClass->id], $ids);
     }
@@ -219,7 +224,7 @@ class TelemetryApiTest extends TestCase
         RequestRecord::factory()->create(['url' => '/api/orders', 'status_code' => 200]);
         $match = RequestRecord::factory()->create(['url' => '/api/orders/123', 'status_code' => 500]);
 
-        $response = $this->actingAs($user)->getJson('/api/requests?q=orders&failed=1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?q=orders&failed=1');
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$match->id], $ids);
@@ -230,7 +235,7 @@ class TelemetryApiTest extends TestCase
         $user = User::factory()->create();
         RequestRecord::factory()->count(2)->create();
 
-        $response = $this->actingAs($user)->getJson('/api/requests?q=');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?q=');
 
         $response->assertOk();
         $this->assertCount(2, $response->json('data'));
@@ -245,7 +250,7 @@ class TelemetryApiTest extends TestCase
         // query or run as SQL — proves parameter binding, not string
         // interpolation.
         $this->actingAs($user)
-            ->getJson('/api/requests?q='.urlencode("'; DROP TABLE nightowl_requests; --"))
+            ->getJson('/api/apps/test_app/requests?q='.urlencode("'; DROP TABLE nightowl_requests; --"))
             ->assertOk();
     }
 }

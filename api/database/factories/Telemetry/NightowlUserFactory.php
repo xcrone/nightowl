@@ -16,6 +16,7 @@ class NightowlUserFactory extends Factory
     public function definition(): array
     {
         return [
+            'app_id' => 'test_app',
             'user_id' => (string) Str::uuid(),
             'name' => fake()->name(),
             'email' => fake()->safeEmail(),

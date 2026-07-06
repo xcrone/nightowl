@@ -27,6 +27,9 @@ class TelemetryRelatedTest extends TestCase
         foreach (['nightowl_requests', 'nightowl_jobs', 'nightowl_queries', 'nightowl_logs', 'nightowl_issues'] as $table) {
             DB::connection('nightowl')->table($table)->delete();
         }
+
+        // App-scoped routes: seed the app the telemetry factories stamp.
+        $this->seedApp('test_app');
     }
 
     public function test_related_links_a_query_back_to_its_request(): void
@@ -38,7 +41,7 @@ class TelemetryRelatedTest extends TestCase
             'execution_id' => 'trace-req-1',
         ]);
 
-        $response = $this->actingAs($user)->getJson("/api/queries/{$query->id}/related");
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/queries/{$query->id}/related");
 
         $response->assertOk()
             ->assertJsonPath('origin.resource', 'requests')
@@ -55,7 +58,7 @@ class TelemetryRelatedTest extends TestCase
         // Noise: a query belonging to a different request must not be counted.
         QueryRecord::factory()->create(['execution_source' => 'request', 'execution_id' => 'trace-req-other']);
 
-        $response = $this->actingAs($user)->getJson("/api/requests/{$request->id}/related");
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/requests/{$request->id}/related");
 
         $response->assertOk()
             ->assertJsonPath('children_filter.execution_source', 'request')
@@ -82,11 +85,11 @@ class TelemetryRelatedTest extends TestCase
             'execution_id' => 'attempt-abc',
         ]);
 
-        $response = $this->actingAs($user)->getJson("/api/jobs/{$job->id}/related");
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/jobs/{$job->id}/related");
 
         $response->assertOk()->assertJsonPath('children.queries', 1);
 
-        $queryRelated = $this->actingAs($user)->getJson("/api/queries/{$query->id}/related");
+        $queryRelated = $this->actingAs($user)->getJson("/api/apps/test_app/queries/{$query->id}/related");
         $queryRelated->assertOk()->assertJsonPath('origin.resource', 'jobs');
         $queryRelated->assertJsonPath('origin.record.id', $job->id);
     }
@@ -107,7 +110,7 @@ class TelemetryRelatedTest extends TestCase
             'execution_id' => null,
         ]);
 
-        $response = $this->actingAs($user)->getJson("/api/jobs/{$job->id}/related");
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/jobs/{$job->id}/related");
 
         $response->assertOk()
             ->assertJsonPath('origin.resource', 'requests')
@@ -120,7 +123,7 @@ class TelemetryRelatedTest extends TestCase
         $match = QueryRecord::factory()->count(2)->create(['execution_source' => 'job', 'execution_id' => 'attempt-1']);
         QueryRecord::factory()->create(['execution_source' => 'job', 'execution_id' => 'attempt-2']);
 
-        $response = $this->actingAs($user)->getJson('/api/queries?execution_source=job&execution_id=attempt-1');
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/queries?execution_source=job&execution_id=attempt-1');
 
         $response->assertOk();
         $ids = array_column($response->json('data'), 'id');
@@ -133,7 +136,7 @@ class TelemetryRelatedTest extends TestCase
         $user = User::factory()->create();
         $issue = Issue::factory()->create();
 
-        $response = $this->actingAs($user)->getJson("/api/issues/{$issue->id}/related");
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/issues/{$issue->id}/related");
 
         $response->assertOk()
             ->assertJsonPath('origin', null)

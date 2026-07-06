@@ -3,18 +3,26 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\App;
+use App\Support\Period;
 use App\Support\SearchTerm;
 use Illuminate\Http\Request;
 
 class TelemetryController extends Controller
 {
-    public function index(string $resource, Request $request)
+    public function index(App $app, string $resource, Request $request)
     {
         $config = $this->resourceConfig($resource);
 
         /** @var class-string<\Illuminate\Database\Eloquent\Model> $modelClass */
         $modelClass = $config['model'];
-        $query = $modelClass::query();
+        $query = $modelClass::query()->where('app_id', $app->app_id);
+
+        // Optional period window (logs/issues lists carry the period selector).
+        if ($request->filled('period') || $request->filled('from') || $request->filled('to')) {
+            [$from, $to] = Period::resolve($request);
+            $query->whereBetween('created_at', [$from, $to]);
+        }
 
         foreach ($config['filters'] as $key => $filter) {
             $this->applyFilter($query, $filter, $key, $request);
@@ -40,14 +48,16 @@ class TelemetryController extends Controller
         return response()->json($query->paginate($perPage)->withQueryString());
     }
 
-    public function show(string $resource, int|string $id)
+    public function show(App $app, string $resource, int|string $id)
     {
         $config = $this->resourceConfig($resource);
 
         /** @var class-string<\Illuminate\Database\Eloquent\Model> $modelClass */
         $modelClass = $config['model'];
 
-        return response()->json($modelClass::findOrFail($id));
+        return response()->json(
+            $modelClass::query()->where('app_id', $app->app_id)->findOrFail($id)
+        );
     }
 
     /**
@@ -59,12 +69,13 @@ class TelemetryController extends Controller
      * the relationship (an origin's own identity vs. a child's
      * execution_source/execution_id pointer back to it).
      */
-    public function related(string $resource, int|string $id)
+    public function related(App $app, string $resource, int|string $id)
     {
         $config = $this->resourceConfig($resource);
+        $appId = $app->app_id;
 
         /** @var \Illuminate\Database\Eloquent\Model $record */
-        $record = $config['model']::findOrFail($id);
+        $record = $config['model']::query()->where('app_id', $appId)->findOrFail($id);
 
         $originResources = array_filter(
             config('telemetry.resources'),
@@ -83,7 +94,8 @@ class TelemetryController extends Controller
 
             if ($originKey !== null) {
                 $originConfig = $originResources[$originKey];
-                $originRecord = $originConfig['model']::where($originConfig['parent_key'], $record->execution_id)->first();
+                $originRecord = $originConfig['model']::where('app_id', $appId)
+                    ->where($originConfig['parent_key'], $record->execution_id)->first();
 
                 if ($originRecord) {
                     $origin = ['resource' => $originKey, 'record' => $originRecord];
@@ -102,7 +114,8 @@ class TelemetryController extends Controller
                 }
 
                 $originConfig = $originResources[$originKey];
-                $originRecord = $originConfig['model']::where('trace_id', $record->trace_id)->first();
+                $originRecord = $originConfig['model']::where('app_id', $appId)
+                    ->where('trace_id', $record->trace_id)->first();
 
                 if ($originRecord) {
                     $origin = ['resource' => $originKey, 'record' => $originRecord];
@@ -125,7 +138,8 @@ class TelemetryController extends Controller
                     continue;
                 }
 
-                $count = $cfg['model']::where('execution_source', $childrenFilter['execution_source'])
+                $count = $cfg['model']::where('app_id', $appId)
+                    ->where('execution_source', $childrenFilter['execution_source'])
                     ->where('execution_id', $childrenFilter['execution_id'])
                     ->count();
 

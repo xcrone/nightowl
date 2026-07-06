@@ -1,58 +1,83 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# api/ — NightOwl JSON API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 13 + Sanctum. A read-mostly JSON API over the `nightowl_*` Postgres
+tables (owned by `agent/`) plus a small app-management schema (orgs/teams/
+apps) in its own primary connection. Consumed by the `web/` SPA.
 
-## About Laravel
+See [../CLAUDE.md](../CLAUDE.md) for how this fits the monorepo and
+[../docs/api-contract.md](../docs/api-contract.md) for the full endpoint
+reference.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Multi-app model
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+The dashboard is an **Org → Teams → Apps** hierarchy. Orgs/teams/apps live in
+the api's own (sqlite) primary DB; every telemetry row carries an `app_id`
+string (added by an `agent/` migration) so a single shared Postgres can hold
+several apps. An `App` binds by its opaque `app_id`, and all per-app telemetry
+is nested and scoped:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```
+GET  /api/user                              current dashboard user
+GET  /api/orgs                              orgs the user belongs to
+GET  /api/apps                              apps grouped by team + 24h health
+GET  /api/apps/{app}                        one app
 
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+# everything below is scoped `where app_id = {app}`:
+GET  /api/apps/{app}/dashboard              summary (requests/duration/exc/jobs/users)
+GET  /api/apps/{app}/timeseries/{metric}    bucketed charts (requests|duration|exceptions|jobs)
+GET  /api/apps/{app}/aggregate/{resource}   per-key rollups (config/aggregates.php)
+GET  /api/apps/{app}/{resource}[/{id}[/related]]   raw telemetry lists/detail (config/telemetry.php)
+GET  /api/apps/{app}/issues/{issue}         issue detail (occurrences/activity/env/stack)
+POST /api/apps/{app}/issues/{issue}/assign|priority
+GET  /api/apps/{app}/users/{userId}         per-user drill-down
+GET  /api/apps/{app}/health                 agent pipeline health (simulated)
+POST /api/apps/{app}/data-management/preview
+GET  /api/apps/{app}/settings   PUT .../environments/{name}   POST .../token/regenerate
+GET/POST .../templates[/sync|/apply]
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### Key pieces
+- `config/telemetry.php` — registry driving the generic `TelemetryController`
+  (12 raw resources: filters, search, trace correlation).
+- `config/aggregates.php` — registry driving `AggregateController`. Aggregation
+  is computed on the fly from raw tables (GROUP BY + Postgres `percentile_cont`),
+  scoped by `app_id` + the period window — not the pre-`app_id` rollup tables.
+- `App\Support\Period` — resolves `?period=1h|6h|24h|7d|14d|30d` (or `from`/`to`)
+  into a `[from, to]` window + chart bucket size.
+- `App\Models\Telemetry\TelemetryRecord::scopeForApp()` — the `where app_id`
+  scope used everywhere.
 
-## Contributing
+## Auth
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Sanctum **SPA cookie/session** auth (not tokens). Login/logout are in
+`routes/web.php` (session + CSRF); `/api/*` is stateful. The SPA must call
+`/sanctum/csrf-cookie` before the first mutating request. Use `localhost`
+(not `127.0.0.1`) so the `localhost`-scoped session cookie is shared between
+the SPA (`:5173`) and the api (`:8000`).
 
-## Code of Conduct
+## Local run + seed
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+composer install
+cp .env.example .env && php artisan key:generate
+php artisan nightowl:migrate     # nightowl_* schema (incl. app_id column)
+php artisan migrate              # api primary DB (users, orgs/teams/apps)
+php artisan db:seed              # admin@example.com/password + Owlworks Agency + 4 apps
+php artisan db:seed --class="Database\Seeders\TelemetrySeeder"   # demo telemetry for all apps
+php artisan serve                # http://localhost:8000
+```
 
-## Security Vulnerabilities
+`TelemetrySeeder` is dev-only (writes hundreds of rows to the shared Postgres);
+it's not part of the default `DatabaseSeeder`.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Tests
 
-## License
+Feature tests run against a **real Postgres** (the shared `nightowl`
+connection) — see `tests/Feature/Telemetry/TelemetryApiTest.php`'s
+`$connectionsToTransact = ['sqlite','nightowl']` pattern and
+`tests/TestCase::seedApp()` (seeds an Org→Team→App so `/api/apps/{app}/…`
+route binding resolves). Telemetry factories default `app_id => 'test_app'`.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+NIGHTOWL_DB_PORT=5433 vendor/bin/phpunit --testsuite Feature
+```

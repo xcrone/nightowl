@@ -16,6 +16,7 @@ class LogRecordFactory extends Factory
     public function definition(): array
     {
         return [
+            'app_id' => 'test_app',
             'trace_id' => (string) Str::uuid(),
             'level' => 'info',
             'message' => fake()->sentence(),

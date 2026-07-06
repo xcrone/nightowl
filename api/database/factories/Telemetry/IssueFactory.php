@@ -15,6 +15,7 @@ class IssueFactory extends Factory
     public function definition(): array
     {
         return [
+            'app_id' => 'test_app',
             'type' => 'exception',
             'status' => 'open',
             'priority' => 'medium',

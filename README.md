@@ -13,8 +13,28 @@ api/      Laravel 13 + Sanctum — JSON API over the nightowl_* Postgres tables.
           Consumes agent/ via a local Composer path repository
           (api/composer.json: repositories -> { type: path, url: ../agent }),
           so edits to agent/ are live in api/ without a release/tag.
-web/      Vue3 + Vite + Pinia SPA — the dashboard UI.
+web/      Vue3 + Vite + Pinia SPA — the multi-app dashboard UI (org → teams →
+          apps; per-app health, activity, monitoring, issues, settings).
 ```
+
+## The dashboard
+
+NightOwl models an **Org → Teams → Apps** hierarchy. After login you land on
+"Your Apps" (the org dashboard), pick an app, and drop into its per-app shell
+(`/dashboard/<app-id>/…`) with a period selector (1H…30D) and:
+
+- **Dashboard** — request volume/latency, exceptions, job throughput, users.
+- **Activity** — Requests, Jobs, Commands, Scheduled Tasks, Exceptions,
+  Queries, Notifications, Mail, Cache, Outgoing Requests (each an aggregated,
+  sortable, searchable list with stat/chart panels).
+- **Monitoring** — Users (+ per-user drill-down), Logs, Agent Health.
+- **Admin** — Data Management (retention preview), Settings (environments,
+  templates, agent token).
+
+Every telemetry row is scoped by an opaque `app_id`, so one shared Postgres
+can hold several apps. Endpoints are documented in
+[docs/api-contract.md](docs/api-contract.md); the reference these pages
+replicate is documented in [docs/README.md](docs/README.md).
 
 ## Why the split
 
@@ -32,23 +52,35 @@ cd agent && composer install && vendor/bin/phpunit --testsuite Unit
 
 cd api && composer install
 cp .env.example .env && php artisan key:generate
-php artisan nightowl:migrate              # creates the nightowl_* schema
-php artisan migrate                       # api's own users/sessions tables (sqlite)
-php artisan serve --port=8001             # or 8000, if nothing else is using it
+php artisan nightowl:migrate              # creates the nightowl_* schema (incl. app_id)
+php artisan migrate                       # api's own users + orgs/teams/apps tables (sqlite)
+php artisan db:seed                       # admin@example.com/password + Owlworks Agency + 4 apps
+php artisan db:seed --class="Database\Seeders\TelemetrySeeder"   # demo telemetry so pages have data
+php artisan serve --port=8000             # or 8001, if 8000 is in use
 
 cd web && pnpm install
 cp .env.example .env
-pnpm dev                                  # http://localhost:5173
+pnpm dev                                  # http://localhost:5173 (log in: admin@example.com / password)
 ```
+
+Open the SPA at **http://localhost:5173** — use `localhost`, not
+`127.0.0.1`, so the `localhost`-scoped session cookie is shared with the api.
 
 Or the whole stack via Docker:
 
 ```bash
 cp .env.example .env                      # first time only
 docker compose up -d --remove-orphans
+
+# seed the account structure + demo telemetry (first run):
+docker compose exec api php artisan migrate --force
+docker compose exec api php artisan db:seed --force
+docker compose exec api php artisan db:seed --class="Database\Seeders\TelemetrySeeder" --force
 ```
 
 (postgres, pgbouncer, the `agent` daemon, the `api` JSON API, and `web`).
+Note the `api`/`web` images bundle built code — after changing `api/`/`web/`,
+`docker compose build api web` before `up` to pick up the changes.
 
 ### Environment files
 
