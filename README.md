@@ -3,8 +3,7 @@
 NightOwl is a self-hosted application monitoring stack for Laravel: an
 open-source telemetry ingest agent, a JSON API, and a dashboard SPA.
 
-This repo is being restructured from a single Laravel+Filament app into
-three sibling projects:
+The stack is split into three sibling projects:
 
 ```
 agent/    nightowl/agent — the open-source telemetry ingest daemon (ReactPHP
@@ -14,20 +13,14 @@ api/      Laravel 13 + Sanctum — JSON API over the nightowl_* Postgres tables.
           Consumes agent/ via a local Composer path repository
           (api/composer.json: repositories -> { type: path, url: ../agent }),
           so edits to agent/ are live in api/ without a release/tag.
-app/      The original Laravel 13 + Filament 5 dashboard this is replacing.
-          Kept only as a reference during the migration — not wired into
-          docker-compose.yml anymore. Remove once api/+web/ reach parity.
-web/      Vue3 + Vite + Pinia SPA — the new dashboard UI, replacing app/'s
-          Filament panel.
+web/      Vue3 + Vite + Pinia SPA — the dashboard UI.
 ```
 
 ## Why the split
 
-`app/` was a read-only Filament admin panel bundled with the agent's Composer
-dependency, mixing a distributable open-source package with an application in
-one repo. The restructure separates concerns: `agent/` stays a clean,
-publishable package; `api/`+`web/` are a decoupled Sanctum API + SPA that can
-evolve independently (auth, deployment, scaling) without touching the agent.
+The stack separates concerns: `agent/` stays a clean, publishable package;
+`api/`+`web/` are a decoupled Sanctum API + SPA that can evolve independently
+(auth, deployment, scaling) without touching the agent.
 
 ## Local development
 
