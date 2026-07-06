@@ -33,6 +33,32 @@ use App\Models\Telemetry\ScheduledTask;
 |
 | No closures here (this file is safe to `config:cache`).
 |
+|--------------------------------------------------------------------------
+| Trace correlation (Telescope-style "related entries")
+|--------------------------------------------------------------------------
+|
+| Every telemetry row belongs to one "execution" — a request, a queued
+| job's attempt, an artisan command, or a scheduled task run. The Nightwatch
+| sensor stamps two different kinds of correlation columns depending on
+| which side of that relationship a row is on:
+|
+|   - "Origin" rows (requests, commands, scheduled-tasks, and a processed/
+|     failed/released job attempt) carry their own identity in `parent_key`
+|     — `trace_id` for requests/commands/scheduled-tasks, but `attempt_id`
+|     for a job attempt (a queue worker's `trace_id` spans many job
+|     attempts, so `attempt_id` is the per-attempt identity instead).
+|   - "Child" rows (queries, cache events, mail, notifications, outgoing
+|     requests, logs, exceptions, and a job's *queued* dispatch event) carry
+|     `execution_source` (one of 'request'|'command'|'scheduled_task'|'job')
+|     and `execution_id`, which equals the origin's `parent_key` value.
+|
+| `jobs` is deliberately in both lists: the row written when a job is
+| dispatched is a child of whatever queued it, while the row written when
+| that job actually runs is itself an origin for its own queries/etc.
+| Verified against real drained data in nightowl_jobs/nightowl_queries
+| rather than assumed from the SDK source, since trace_id/execution_id
+| don't always coincide (see TelemetryController::related()).
+|
 */
 
 return [
@@ -57,6 +83,7 @@ return [
                 'handled' => ['column' => 'handled', 'op' => '='],
                 'unhandled_only' => ['column' => 'handled', 'op' => '=', 'value' => false],
             ],
+            'traces_to_parent' => true,
         ],
 
         'requests' => [
@@ -69,6 +96,8 @@ return [
                 'slow' => ['column' => 'duration', 'op' => '>', 'value' => 1000 * 1000],
                 'has_exceptions' => ['column' => 'exceptions', 'op' => '>', 'value' => 0],
             ],
+            'parent_key' => 'trace_id',
+            'parent_source' => 'request',
         ],
 
         'outgoing-requests' => [
@@ -78,6 +107,7 @@ return [
             'filters' => [
                 'failed' => ['column' => 'status_code', 'op' => '>=', 'value' => 400],
             ],
+            'traces_to_parent' => true,
         ],
 
         'jobs' => [
@@ -87,6 +117,12 @@ return [
             'filters' => [
                 'status' => ['column' => 'status', 'op' => '='],
             ],
+            // A job is both: the dispatch event is a child of whatever
+            // queued it, and a processed/failed/released attempt is itself
+            // the parent of the queries/etc. that ran during it.
+            'traces_to_parent' => true,
+            'parent_key' => 'attempt_id',
+            'parent_source' => 'job',
         ],
 
         'commands' => [
@@ -94,6 +130,8 @@ return [
             'default_sort' => '-created_at',
             'sortable' => ['created_at', 'duration'],
             'filters' => [],
+            'parent_key' => 'trace_id',
+            'parent_source' => 'command',
         ],
 
         'scheduled-tasks' => [
@@ -103,6 +141,8 @@ return [
             'filters' => [
                 'status' => ['column' => 'status', 'op' => '='],
             ],
+            'parent_key' => 'trace_id',
+            'parent_source' => 'scheduled_task',
         ],
 
         'queries' => [
@@ -112,6 +152,7 @@ return [
             'filters' => [
                 'slow' => ['column' => 'duration', 'op' => '>', 'value' => 100 * 1000],
             ],
+            'traces_to_parent' => true,
         ],
 
         'cache-events' => [
@@ -121,6 +162,7 @@ return [
             'filters' => [
                 'event_type' => ['column' => 'event_type', 'op' => '='],
             ],
+            'traces_to_parent' => true,
         ],
 
         'mail' => [
@@ -128,6 +170,7 @@ return [
             'default_sort' => '-created_at',
             'sortable' => ['created_at', 'duration'],
             'filters' => [],
+            'traces_to_parent' => true,
         ],
 
         'notifications' => [
@@ -135,6 +178,7 @@ return [
             'default_sort' => '-created_at',
             'sortable' => ['created_at', 'duration'],
             'filters' => [],
+            'traces_to_parent' => true,
         ],
 
         'logs' => [
@@ -144,6 +188,7 @@ return [
             'filters' => [
                 'level' => ['column' => 'level', 'op' => '='],
             ],
+            'traces_to_parent' => true,
         ],
 
     ],

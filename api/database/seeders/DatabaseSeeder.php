@@ -15,11 +15,16 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // Not User::factory()->create(...): UserFactory::definition() calls
+        // fake() to build its default name/email even when both are
+        // overridden below (the override only replaces the result, it
+        // doesn't skip evaluating it), and fakerphp/faker is require-dev
+        // only — it isn't installed in the --no-dev production image
+        // (docker/Dockerfile), so seeding there would fail with "Call to
+        // undefined function fake()".
+        User::query()->firstOrCreate(
+            ['email' => 'admin@example.com'],
+            ['name' => 'Administrator', 'password' => 'password']
+        );
     }
 }

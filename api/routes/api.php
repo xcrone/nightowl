@@ -43,4 +43,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/{resource}/{id}', [TelemetryController::class, 'show'])
         ->whereIn('resource', array_keys(config('telemetry.resources')))
         ->whereNumber('id');
+
+    // Telescope-style "related entries" — see TelemetryController::related().
+    Route::get('/{resource}/{id}/related', [TelemetryController::class, 'related'])
+        ->whereIn('resource', array_keys(config('telemetry.resources')))
+        ->whereNumber('id');
 });

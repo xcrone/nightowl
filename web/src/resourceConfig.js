@@ -57,6 +57,49 @@ export const navGroups = [
   },
 ]
 
+// Fields used to build a short human-readable summary of a record for the
+// "Related" panel (e.g. "Part of request: GET /api/orders") — kept separate
+// from `columns` since list columns include timing/status noise that isn't
+// useful for a one-line summary of an unfamiliar record.
+export const titleFields = {
+  requests: ['method', 'url'],
+  'outgoing-requests': ['method', 'url'],
+  jobs: ['job_class'],
+  commands: ['command'],
+  'scheduled-tasks': ['command'],
+  queries: ['sql_query'],
+  'cache-events': ['event_type', 'key'],
+  mail: ['subject'],
+  notifications: ['notification'],
+  logs: ['level', 'message'],
+  exceptions: ['class', 'message'],
+}
+
+// Singular form of each resource's label, for "Part of {singular} #{id}"
+// copy — not derivable from `label` by stripping a trailing "s" (Queries).
+export const singularLabels = {
+  requests: 'request',
+  'outgoing-requests': 'outgoing request',
+  jobs: 'job',
+  commands: 'command',
+  'scheduled-tasks': 'scheduled task',
+  queries: 'query',
+  'cache-events': 'cache event',
+  mail: 'mail',
+  notifications: 'notification',
+  logs: 'log',
+  exceptions: 'exception',
+}
+
+export function summarize(resource, record) {
+  if (!record) return ''
+  const fields = titleFields[resource] ?? []
+  return fields
+    .map((field) => record[field])
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .join(' — ')
+}
+
 export const resources = {
   issues: {
     label: 'Issues',

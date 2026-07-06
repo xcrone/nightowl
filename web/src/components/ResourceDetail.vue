@@ -1,7 +1,8 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import api from '../services/api'
-import { resources } from '../resourceConfig'
+import { resources, singularLabels, summarize } from '../resourceConfig'
 import { formatValue } from '../utils/format'
 import JsonViewer from './JsonViewer.vue'
 
@@ -16,7 +17,31 @@ const state = reactive({
   record: null,
   loading: false,
   error: null,
+  related: null,
 })
+
+const originLabel = computed(() => {
+  const origin = state.related?.origin
+  if (!origin) return null
+  const label = singularLabels[origin.resource] ?? origin.resource
+  const summary = summarize(origin.resource, origin.record)
+  return summary ? `${label} — ${summary}` : label
+})
+
+const relatedChildren = computed(() => {
+  if (!state.related?.children) return []
+  return Object.entries(state.related.children).map(([key, count]) => ({
+    key,
+    count,
+    label: resources[key]?.label ?? key,
+  }))
+})
+
+function relatedChildQuery() {
+  const filter = state.related?.children_filter
+  if (!filter) return {}
+  return { execution_source: filter.execution_source, execution_id: filter.execution_id }
+}
 
 // Long text fields (stack traces, SQL, headers/payload JSON) render as
 // collapsible blocks below the main grid instead of needing a per-resource
@@ -76,14 +101,25 @@ function parseJson(value) {
 async function load() {
   state.loading = true
   state.error = null
+  state.related = null
 
   try {
     const { data } = await api.get(`/api/${props.resource}/${props.id}`)
     state.record = data
   } catch (e) {
     state.error = e.response?.data?.message ?? 'Failed to load record.'
+    return
   } finally {
     state.loading = false
+  }
+
+  // Best-effort: the "Related" panel is a nice-to-have alongside the
+  // record itself, so a failure here shouldn't surface as a page error.
+  try {
+    const { data } = await api.get(`/api/${props.resource}/${props.id}/related`)
+    state.related = data
+  } catch {
+    state.related = null
   }
 }
 
@@ -113,6 +149,32 @@ defineExpose({ state })
           <dd class="text-sm text-gray-900 dark:text-gray-100">{{ formatValue(value) }}</dd>
         </div>
       </dl>
+
+      <div
+        v-if="originLabel || relatedChildren.length"
+        class="mt-3 rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
+      >
+        <h2 class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Related</h2>
+
+        <RouterLink
+          v-if="state.related.origin"
+          :to="`/${state.related.origin.resource}/${state.related.origin.record.id}`"
+          class="mt-2 block truncate text-sm text-primary-600 hover:underline dark:text-primary-400"
+        >
+          ↳ Part of {{ originLabel }}
+        </RouterLink>
+
+        <div v-if="relatedChildren.length" class="mt-2 flex flex-wrap gap-2">
+          <RouterLink
+            v-for="child in relatedChildren"
+            :key="child.key"
+            :to="{ path: `/${child.key}`, query: relatedChildQuery() }"
+            class="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:border-primary-500 hover:text-primary-700 dark:border-gray-700 dark:text-gray-300 dark:hover:border-primary-500 dark:hover:text-primary-400"
+          >
+            {{ child.count }} {{ child.label }}
+          </RouterLink>
+        </div>
+      </div>
 
       <details v-for="field in longFields" :key="field.key" class="mt-3 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
         <summary class="flex items-center justify-between gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import api from '../services/api'
 import { resources } from '../resourceConfig'
 import { formatValue } from '../utils/format'
@@ -8,6 +8,9 @@ import { formatValue } from '../utils/format'
 const props = defineProps({
   resource: { type: String, required: true },
 })
+
+const route = useRoute()
+const router = useRouter()
 
 const config = computed(() => resources[props.resource])
 
@@ -20,12 +23,25 @@ const state = reactive({
   activeFilters: {},
 })
 
+// Structural correlation filter arriving from ResourceDetail's "Related"
+// panel (e.g. /queries?execution_source=request&execution_id=...) — not a
+// per-resource business filter, so it's read straight from the URL rather
+// than config.filters.
+const relatedFilter = computed(() => {
+  const { execution_source: source, execution_id: id } = route.query
+  return source && id ? { execution_source: source, execution_id: id } : null
+})
+
+function clearRelatedFilter() {
+  router.replace({ path: route.path })
+}
+
 async function load() {
   state.loading = true
   state.error = null
 
   try {
-    const params = { page: state.page, sort: config.value.defaultSort, ...state.activeFilters }
+    const params = { page: state.page, sort: config.value.defaultSort, ...state.activeFilters, ...relatedFilter.value }
     const { data } = await api.get(`/api/${props.resource}`, { params })
     state.rows = data.data
     state.lastPage = data.last_page
@@ -54,15 +70,15 @@ function setSelectFilter(key, value) {
   state.page = 1
 }
 
-watch(() => [props.resource, state.page, state.activeFilters], load, { deep: true, immediate: false })
+watch(() => [state.page, state.activeFilters], load, { deep: true, immediate: false })
 watch(
-  () => props.resource,
+  () => [props.resource, relatedFilter.value],
   () => {
     state.page = 1
     state.activeFilters = {}
     load()
   },
-  { immediate: true },
+  { deep: true, immediate: true },
 )
 </script>
 
@@ -70,6 +86,14 @@ watch(
   <div>
     <div class="mb-4 flex items-center justify-between">
       <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">{{ config.label }}</h1>
+    </div>
+
+    <div
+      v-if="relatedFilter"
+      class="mb-4 flex items-center justify-between rounded border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-400"
+    >
+      <span>Showing entries linked to this execution</span>
+      <button type="button" class="font-medium hover:underline" @click="clearRelatedFilter">Clear</button>
     </div>
 
     <div v-if="config.filters.length" class="mb-4 flex flex-wrap gap-2">
