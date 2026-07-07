@@ -28,6 +28,7 @@
 //   { kind: 'stat', title, stats: [{ label, value, class? }], caption? }
 
 import {
+  base64UrlEncode,
   formatDuration,
   formatDurationColor,
   formatPercent,
@@ -39,6 +40,18 @@ import { BADGE, methodColor } from './resourceConfig'
 const COLOR = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', blue: '#3b82f6', gray: '#9ca3af' }
 
 const num = (v) => Number(v ?? 0)
+
+// Per-item drill-down link: base64url-encode the aggregate's raw group-by key
+// into the /dashboard/:appId/:resource/:key detail route (see aggregate-detail
+// / exception-detail pages). `keyField` is the row field the api groups by.
+// A null/undefined/empty key would base64url-encode to '' and produce a broken
+// `/…/{resource}/` route with an empty `:key` segment, so return null instead
+// (onRowClick no-ops, matching non-clickable rows).
+const isEmptyKey = (v) => v === null || v === undefined || v === ''
+const detailLink = (resource, keyField) => (row, appId) =>
+  isEmptyKey(row[keyField])
+    ? null
+    : `/dashboard/${appId}/${resource}/${base64UrlEncode(row[keyField])}`
 
 // A red pill only once a count is non-zero (failed jobs, 5xx, …).
 const redWhenPositive = (v) => (num(v) > 0 ? BADGE.red : '')
@@ -109,6 +122,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search routes…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
+    rowLink: detailLink('requests', 'route_path'),
     columns: [
       { key: 'method', label: 'Method', badge: methodColor },
       { key: 'route_path', label: 'Path' },
@@ -127,6 +141,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search hosts…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
+    rowLink: detailLink('outgoing-requests', 'host'),
     columns: [
       { key: 'host', label: 'Host' },
       ...statusCols(),
@@ -144,6 +159,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search jobs…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
+    rowLink: detailLink('jobs', 'job_class'),
     columns: [
       { key: 'job_class', label: 'Job Class' },
       { key: 'queued', label: 'Queued', align: 'right' },
@@ -186,6 +202,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search commands…',
     scope: null,
+    rowLink: detailLink('commands', 'command'),
     columns: [
       { key: 'command', label: 'Command' },
       { key: 'successful', label: 'Successful', align: 'right' },
@@ -224,6 +241,16 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search tasks…',
     scope: null,
+    // Composite group key (command + cron expression) — carry `expression` as a
+    // query param so one command with several schedules resolves to the right row.
+    // A null/empty command would yield a broken empty `:key` segment, so no-op.
+    rowLink: (row, appId) =>
+      isEmptyKey(row.command)
+        ? null
+        : {
+            path: `/dashboard/${appId}/scheduled-tasks/${base64UrlEncode(row.command)}`,
+            query: row.expression ? { expression: row.expression } : {},
+          },
     columns: [
       { key: 'command', label: 'Command' },
       { key: 'schedule', label: 'Schedule' },
@@ -266,6 +293,8 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search queries…',
     scope: { param: 'connection', label: 'All Connections', source: 'rows:connection' },
+    // Query drill-down keys on the stable `group_hash`, not the SQL text.
+    rowLink: detailLink('queries', 'group_hash'),
     columns: [
       { key: 'rw', label: 'R/W', badge: rwBadge, format: rwLabel, sortable: false },
       { key: 'sql_query', label: 'SQL', sortable: false },
@@ -298,6 +327,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search notifications…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
+    rowLink: detailLink('notifications', 'notification'),
     columns: [
       { key: 'notification', label: 'Notification' },
       { key: 'channels', label: 'Channels', badge: channelsBadge, format: channelsLabel, sortable: false },
@@ -330,6 +360,7 @@ export const aggregateConfig = {
     searchable: true,
     searchPlaceholder: 'Search mailables…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
+    rowLink: detailLink('mail', 'mailable'),
     columns: [
       { key: 'mailable', label: 'Mailable' },
       { key: 'count', label: 'Count', align: 'right' },
@@ -464,6 +495,9 @@ export const aggregateConfig = {
     searchPlaceholder: 'Search exceptions…',
     scope: { param: 'user_id', label: 'All Users', source: 'users' },
     handledFilter: true,
+    // Exceptions drill into the error-tracking exception-groups detail, keyed on
+    // the exception class — not the generic aggregate/{resource}/{key} page.
+    rowLink: detailLink('exceptions', 'class'),
     columns: [
       { key: 'handled', label: 'Status', badge: handledBadge, format: handledLabel, sortable: false },
       { key: 'class', label: 'Exception' },

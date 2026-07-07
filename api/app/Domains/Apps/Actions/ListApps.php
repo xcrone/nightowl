@@ -45,10 +45,10 @@ class ListApps
         ]);
     }
 
-    /** One app's health card payload over a recent window. */
+    /** One app's health card payload over the last 1h window (docs/api-contract.md). */
     private function health(App $app): array
     {
-        $since = Carbon::now()->subDay();
+        $since = Carbon::now()->subHour();
         $appId = $app->app_id;
 
         $reqTotal = RequestRecord::query()->forApp($appId)->where('created_at', '>=', $since)->count();

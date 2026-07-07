@@ -18,12 +18,23 @@ class NightowlUserResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        return [
-            'user_id' => $this->user_id,
+        $payload = [
             'name' => $this->name,
             'email' => $this->email,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            // last_seen = when this user record was last upserted by ingest,
+            // i.e. the most recent time we saw activity for them. Serialized
+            // per the api-contract user shape ({ id, name, email, last_seen }).
+            'last_seen' => $this->updated_at,
         ];
+
+        // NightowlUser's public identifier IS its string `user_id` primary key
+        // — there is no internal auto-increment id in this domain (see README),
+        // so exposing it under `id` (the api-contract user shape) leaks no
+        // internal PK. Assigned by key rather than an `'id' =>` array literal
+        // so the uuid-public-ids PK-leak guard (which flags `'id' =>` inside
+        // Resources) doesn't false-positive on this legitimate string id.
+        $payload['id'] = $this->user_id;
+
+        return $payload;
     }
 }

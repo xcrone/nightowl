@@ -48,6 +48,11 @@ function errorRateBadge(rate) {
 function openApp(appId) {
   router.push(`/dashboard/${appId}`)
 }
+
+async function signOut() {
+  await auth.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -64,10 +69,13 @@ function openApp(appId) {
         </div>
         <button
           type="button"
-          class="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-          title="Account"
+          aria-label="Log out"
+          class="flex items-center gap-2 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-red-600 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-red-400"
+          :title="`Log out ${auth.user?.email ?? ''}`.trim()"
+          @click="signOut"
         >
-          {{ auth.user?.email ?? 'Account' }}
+          <span class="hidden sm:inline">{{ auth.user?.email ?? 'Account' }}</span>
+          <span aria-hidden="true">⎋</span>
         </button>
       </div>
 

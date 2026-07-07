@@ -84,10 +84,15 @@ return [
         'issues' => [
             'model' => Issue::class,
             'default_sort' => '-last_seen_at',
-            'sortable' => ['last_seen_at', 'first_seen_at', 'occurrences_count', 'users_count', 'created_at'],
+            'sortable' => ['id', 'priority', 'last_seen_at', 'first_seen_at', 'occurrences_count', 'users_count', 'created_at'],
             'filters' => [
                 'status' => ['column' => 'status', 'op' => '='],
                 'type' => ['column' => 'type', 'op' => '='],
+                // Tri-state assignment pill (all|unassigned|mine). Not a plain
+                // param/flag filter: 'unassigned' -> IS NULL and 'mine' ->
+                // the authenticated user's email, so it declares kind =>
+                // 'assignment' for App\Support\TelemetryQuery to special-case.
+                'assignment' => ['column' => 'assigned_to', 'kind' => 'assignment'],
             ],
             'search' => [
                 'tsvector' => 'search_vector',

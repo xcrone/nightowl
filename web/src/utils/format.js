@@ -26,6 +26,24 @@ export function formatDurationColor(microseconds) {
   return ''
 }
 
+// Human-readable byte size ("812 KB", "272 MB", "1.4 GB"). Uses 1024-based
+// units to mirror Postgres' pg_size_pretty (the Storage tab's footprint numbers
+// come straight from pg_total_relation_size).
+export function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined || bytes === '') return '—'
+  const n = Number(bytes)
+  if (!Number.isFinite(n)) return '—'
+  if (n < 1024) return `${Math.round(n)} B`
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB']
+  let value = n / 1024
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i++
+  }
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[i]}`
+}
+
 // value is already a percentage (e.g. error_rate 12.3), not a 0..1 fraction.
 export function formatPercent(value, decimals = 1) {
   if (value === null || value === undefined || value === '') return '—'
@@ -70,6 +88,19 @@ export function absoluteTime(iso, { timezone = 'Local', format = '24h' } = {}) {
   }
   if (timezone === 'UTC') opts.timeZone = 'UTC'
   return new Intl.DateTimeFormat(undefined, opts).format(date)
+}
+
+// Base64url-encode an aggregate key (RFC 4648 §5): standard base64 with
+// `+`→`-`, `/`→`_`, and `=` padding stripped. UTF-8 safe — the raw key can hold
+// slashes, backslashes, spaces, or SQL, so it's TextEncoder'd to bytes first.
+// Mirrors the api's `App\Support\AggregateKey::encode`; drives the per-item
+// drill-down route params (aggregate detail + exception detail).
+export function base64UrlEncode(value) {
+  if (value === null || value === undefined) return ''
+  const bytes = new TextEncoder().encode(String(value))
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 export function formatValue(value, format) {

@@ -29,7 +29,7 @@ class AppSettingsApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('app_id', 'set_app')
             ->assertJsonPath('environments.production', '#22c55e')
-            ->assertJsonStructure(['agent_token_masked', 'template']);
+            ->assertJsonStructure(['agent_token', 'template']);
     }
 
     public function test_environment_color_can_be_updated(): void

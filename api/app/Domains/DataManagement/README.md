@@ -31,7 +31,7 @@ config-driven and not persisted anywhere.
 
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
-| `PreviewDataManagement` | For each requested type in `TYPES`, counts rows of that model scoped to the app and `created_at` between `from` (default: epoch) and `to`; returns `{counts: {type => n}, total: sum(counts)}`. Unknown type keys (not in `TYPES`) are silently skipped. | `authorize()` always allows (any authenticated user on the app can preview — no extra ownership check beyond the `auth:sanctum` middleware + `{app}` route binding). `rules()`: `from` nullable date, `to` required date, `types` required non-empty array of strings. No delete/side effect — pure read. |
+| `PreviewDataManagement` | For each requested type in `TYPES`, counts rows of that model scoped to the app and `created_at` between `from` (default: epoch) and `to`; returns `{counts: {type => n}, total: sum(counts)}`. Optional per-type "Filters" (`docs/pages/data-management.md`) narrow the counts: `?user_id=` narrows **every** category (each `nightowl_*` table carries a nullable `user_id` column), and `?level=` narrows the `logs` category only (the sole one with a `level` column; ignored for the rest). Empty-string filter values are treated as "no filter". Unknown type keys (not in `TYPES`) are silently skipped. | `authorize()` always allows (any authenticated user on the app can preview — no extra ownership check beyond the `auth:sanctum` middleware + `{app}` route binding). `rules()`: `from` nullable date, `to` required date, `types` required non-empty array of strings, `user_id` nullable string, `level` nullable string. No delete/side effect — pure read. |
 
 ## Endpoints
 

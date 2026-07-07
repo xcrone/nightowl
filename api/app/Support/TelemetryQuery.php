@@ -25,6 +25,12 @@ class TelemetryQuery
 
     public static function applyFilter(Builder $query, array $filter, string $key, Request $request): void
     {
+        if (($filter['kind'] ?? null) === 'assignment') {
+            self::applyAssignmentFilter($query, $filter, $key, $request);
+
+            return;
+        }
+
         if (array_key_exists('value', $filter)) {
             // Flag filter: presence of a truthy query param triggers a
             // config-fixed where() clause, e.g. ?failed=1 -> status_code >= 500.
@@ -43,6 +49,34 @@ class TelemetryQuery
         }
 
         $query->where($filter['column'], $filter['op'] ?? '=', $value);
+    }
+
+    /**
+     * Tri-state ?assignment=all|unassigned|mine (issues list). Absent or
+     * 'all' -> no constraint; 'unassigned' -> the assignee column IS NULL;
+     * 'mine' -> the authenticated Sanctum user's email. Any other value is
+     * ignored (treated like 'all') so a stray query string never 500s.
+     */
+    private static function applyAssignmentFilter(Builder $query, array $filter, string $key, Request $request): void
+    {
+        $value = $request->query($key);
+        $column = $filter['column'];
+
+        if ($value === 'unassigned') {
+            $query->whereNull($column);
+
+            return;
+        }
+
+        if ($value === 'mine') {
+            // Match on the current user's email; if the request somehow has no
+            // authenticated user, match nothing rather than leaking every row.
+            $email = $request->user()?->email;
+
+            $email === null
+                ? $query->whereRaw('1 = 0')
+                : $query->where($column, $email);
+        }
     }
 
     /**

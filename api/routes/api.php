@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Aggregates\IndexAggregate;
+use App\Actions\Aggregates\ShowAggregateDetail;
+use App\Actions\Exceptions\ShowExceptionGroup;
 use App\Actions\Health\ShowAgentHealth;
 use App\Actions\Rollups\IndexRollup;
 use App\Actions\Telemetry\IndexTelemetryResource;
@@ -40,6 +42,21 @@ Route::middleware('auth:sanctum')->group(function () {
         // telemetry resource key so there's no shadowing either way.
         Route::get('/aggregate/{resource}', IndexAggregate::class)
             ->whereIn('resource', array_keys(config('aggregates')));
+
+        // Per-key aggregate drill-down (docs/pages/aggregate-detail.md) — the
+        // 8 clickable Activity aggregates (config detail => true). {key} is the
+        // base64url aggregate key (App\Support\AggregateKey). More specific than
+        // /aggregate/{resource}, so registered right after it; constrained to
+        // the detail-enabled resources.
+        Route::get('/aggregate/{resource}/{key}', ShowAggregateDetail::class)
+            ->whereIn('resource', array_keys(array_filter(
+                config('aggregates'),
+                fn ($c) => $c['detail'] ?? false
+            )));
+
+        // Exception group drill-down (docs/pages/exception-detail.md). Distinct
+        // path (not a telemetry/aggregate resource key), so no shadowing.
+        Route::get('/exception-groups/{key}', ShowExceptionGroup::class);
 
         Route::get('/{resource}', IndexTelemetryResource::class)
             ->whereIn('resource', array_keys(config('telemetry.resources')));

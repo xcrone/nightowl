@@ -61,7 +61,7 @@ class ShowUserDetail
         return response()->json([
             'user' => $user
                 ? new NightowlUserResource($user)
-                : ['user_id' => $userId, 'name' => null, 'email' => null, 'created_at' => null, 'updated_at' => null],
+                : ['id' => $userId, 'name' => null, 'email' => null, 'last_seen' => null],
             'requests' => [
                 'total' => (int) $requests->total, 'c2xx' => (int) $requests->c2xx,
                 'c4xx' => (int) $requests->c4xx, 'c5xx' => (int) $requests->c5xx,

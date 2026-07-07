@@ -8,6 +8,7 @@ use App\Models\Telemetry\JobRecord;
 use App\Models\Telemetry\NightowlUser;
 use App\Models\Telemetry\RequestRecord;
 use App\Support\AggregateQuery;
+use App\Support\EnvironmentScope;
 use App\Support\Period;
 use App\Support\SearchTerm;
 use Illuminate\Database\Query\Builder;
@@ -45,7 +46,7 @@ class IndexAggregate
             return response()->json([
                 'from' => $from->toIso8601String(), 'to' => $to->toIso8601String(), 'period' => $period,
                 'panels' => $this->userPanels($app->app_id, $from, $to),
-                'data' => $this->users($app->app_id, $from, $to, $request),
+                'data' => $this->users($app->app_id, $from, $to, $request, $config),
             ]);
         }
 
@@ -55,7 +56,9 @@ class IndexAggregate
             ->where('app_id', $app->app_id)
             ->whereBetween('created_at', [$from, $to]);
 
-        // Page-scope filters (All Users / All Connections / All Levels).
+        // Page-scope filters (All Users / All Connections / All Levels +
+        // the app switcher's All Environments). The bespoke users branch
+        // returns above this — its table has no environment column.
         $applyScope = function (Builder $q) use ($config, $request) {
             foreach ($config['scope'] ?? [] as $key) {
                 if ($request->filled($key)) {
@@ -63,6 +66,8 @@ class IndexAggregate
                     $q->where($column, $request->query($key));
                 }
             }
+
+            EnvironmentScope::apply($q, $request);
 
             return $q;
         };
@@ -94,14 +99,14 @@ class IndexAggregate
 
         return response()->json([
             'from' => $from->toIso8601String(), 'to' => $to->toIso8601String(), 'period' => $period,
-            'panels' => AggregateQuery::normalizeRow($panels, $config),
+            'panels' => AggregateQuery::shapePanels(AggregateQuery::normalizeRow($panels, $config), $config),
             'data' => $data,
         ]);
     }
 
     // ---- bespoke: per-user rollup (requests + jobs + exceptions) ----
 
-    private function users(string $appId, $from, $to, ActionRequest $request): array
+    private function users(string $appId, $from, $to, ActionRequest $request, array $config): array
     {
         $window = fn ($m) => $m::query()->forApp($appId)->whereBetween('created_at', [$from, $to]);
 
@@ -124,6 +129,10 @@ class IndexAggregate
 
         $q = SearchTerm::fromRequest($request);
 
+        // Honor ?sort= against the users sortable whitelist (config/aggregates.php),
+        // falling back to default_sort — matching the grouped aggregates' behaviour.
+        [$sortCol, $dir] = AggregateQuery::sort($config, $request);
+
         return $requests->map(function ($r) use ($jobs, $exceptions, $emails) {
             return [
                 'user_id' => $r->user_id,
@@ -136,7 +145,8 @@ class IndexAggregate
             ];
         })->values()
             ->when($q !== null, fn ($c) => $c->filter(fn ($u) => str_contains(strtolower($u['user_id'].' '.$u['email']), strtolower($q)))->values())
-            ->sortByDesc('requests')->values()->all();
+            ->sortBy(fn ($u) => $u[$sortCol] ?? null, SORT_REGULAR, $dir === 'desc')
+            ->values()->all();
     }
 
     private function userPanels(string $appId, $from, $to): array
@@ -146,8 +156,10 @@ class IndexAggregate
                 SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) as authenticated,
                 SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) as guest')->first();
 
+        // Nested to match web/src/aggregateConfig.js users.panels(): reads
+        // p.users.total and p.requests_split.{authenticated,guest}.
         return [
-            'authenticated_total' => (int) ($r->authenticated_total ?? 0),
+            'users' => ['total' => (int) ($r->authenticated_total ?? 0)],
             'requests_split' => ['authenticated' => (int) ($r->authenticated ?? 0), 'guest' => (int) ($r->guest ?? 0)],
         ];
     }

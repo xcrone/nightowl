@@ -45,7 +45,7 @@ class NightowlUserApiTest extends TestCase
         $response = $this->actingAs($admin)->getJson('/api/users?q=acme');
 
         $response->assertOk();
-        $ids = array_column($response->json('data'), 'user_id');
+        $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$match->user_id], $ids);
     }
 
@@ -57,10 +57,11 @@ class NightowlUserApiTest extends TestCase
         $response = $this->actingAs($admin)->getJson("/api/users/{$user->user_id}");
 
         $response->assertOk()
-            ->assertJsonPath('user_id', $user->user_id)
+            ->assertJsonPath('id', $user->user_id)
             ->assertJsonPath('name', 'Carol')
             ->assertJsonPath('email', 'carol@example.com')
-            ->assertJsonMissingPath('id');
+            ->assertJsonStructure(['id', 'name', 'email', 'last_seen'])
+            ->assertJsonMissingPath('user_id');
     }
 
     public function test_shows_404_for_an_unknown_user_id(): void

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -28,8 +29,11 @@ class AggregateQuery
             if (($label = $config['label'] ?? null) && ! in_array($label, $config['group_by'], true)) {
                 $expr[] = "MAX({$label}) as {$label}";
             }
-            foreach ($config['extra'] ?? [] as $col) {
-                $expr[] = "MAX({$col}) as {$col}";
+            // 'extra' may be a plain list (col) or a map (alias => col) so the
+            // emitted row field can be renamed (e.g. execution_source -> source).
+            foreach ($config['extra'] ?? [] as $alias => $col) {
+                $as = is_int($alias) ? $col : $alias;
+                $expr[] = "MAX({$col}) as {$as}";
             }
             foreach ($config['collect_distinct'] ?? [] as $alias => $col) {
                 $expr[] = "string_agg(DISTINCT {$col}::text, ',') as {$alias}";
@@ -38,7 +42,10 @@ class AggregateQuery
                 $expr[] = "COUNT(DISTINCT {$col}) as {$alias}";
             }
             if ($lastCol = $config['last'] ?? null) {
-                $expr[] = "MAX({$lastCol}) as last_{$lastCol}";
+                // Default alias is last_<col>; 'last_alias' overrides it so the
+                // row field matches the contract (e.g. last_sent / last_seen).
+                $alias = $config['last_alias'] ?? "last_{$lastCol}";
+                $expr[] = "MAX({$lastCol}) as {$alias}";
             }
         }
 
@@ -54,6 +61,64 @@ class AggregateQuery
         }
 
         return array_map(fn ($e) => DB::raw($e), $expr);
+    }
+
+    /**
+     * P50/P95/P99 (+ AVG) duration breakdown for the aggregate-detail page's
+     * percentile toggle and its "≥ AVG / ≥ P50 / ≥ P95 / ≥ P99" filter chips.
+     * A superset of the list page's single-p95 duration panel.
+     */
+    public static function percentileExpressions(): array
+    {
+        return array_map(fn ($e) => DB::raw($e), [
+            'ROUND(AVG(duration))::bigint as avg',
+            'percentile_cont(0.5) within group (order by duration)::bigint as p50',
+            'percentile_cont(0.95) within group (order by duration)::bigint as p95',
+            'percentile_cont(0.99) within group (order by duration)::bigint as p99',
+        ]);
+    }
+
+    /**
+     * Constrain a query (Eloquent or DB::table) to one aggregate key. The
+     * primary group column is matched against the decoded path key; any
+     * further group columns (only scheduled-tasks' `expression`) are matched
+     * against a same-named query param when present, so a composite key can be
+     * disambiguated without a second path segment.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder  $query
+     */
+    public static function applyKeyScope($query, array $config, string $key, Request $request): void
+    {
+        $groupBy = $config['group_by'];
+        $query->where($groupBy[0], $key);
+
+        foreach (array_slice($groupBy, 1) as $col) {
+            if ($request->filled($col)) {
+                $query->where($col, $request->query($col));
+            }
+        }
+    }
+
+    /**
+     * Apply the aggregate-detail table's resource-specific outcome chip
+     * (?outcome=<count_bucket alias>) by replaying that bucket's config-defined
+     * conditions as where() clauses — e.g. requests ?outcome=c5xx ->
+     * status_code >= 500, jobs ?outcome=failed -> status = 'failed'.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder  $query
+     */
+    public static function applyOutcome($query, array $config, Request $request): void
+    {
+        $outcome = $request->query('outcome');
+        $buckets = $config['count_buckets'] ?? [];
+
+        if ($outcome === null || ! isset($buckets[$outcome])) {
+            return;
+        }
+
+        foreach ($buckets[$outcome] as [$col, $op, $val]) {
+            $query->where($col, $op, $val);
+        }
     }
 
     /** Render config-derived (trusted) [col, op, val] conditions to SQL. */
@@ -118,7 +183,81 @@ class AggregateQuery
             $reads = $row['hits'] + $row['misses'];
             $row['hit_rate'] = $reads > 0 ? round($row['hits'] / $reads * 100, 2) : 0.0;
         }
+        // Humanize a raw cron expression into a `schedule` cadence label.
+        if (($cronCol = $config['cron'] ?? null) && array_key_exists($cronCol, $row)) {
+            $row['schedule'] = self::humanizeCron((string) $row[$cronCol]);
+            // Keep the raw cron when it's a group_by key: detail drill-down
+            // (ShowAggregateDetail) + the SPA rowLink need it to disambiguate
+            // rows that share a command but differ by cadence.
+            if ($cronCol !== 'schedule' && ! in_array($cronCol, $config['group_by'] ?? [], true)) {
+                unset($row[$cronCol]);
+            }
+        }
 
         return $row;
+    }
+
+    /**
+     * Reshape a flat, normalized aggregate row into the nested per-stat-panel
+     * sub-objects the frontend's panels(p) builders (web/src/aggregateConfig.js)
+     * and docs/api-contract.md expect (e.g. requests -> { requests:{…}, duration:{…} }).
+     * Driven by the config's declarative `panels` spec; each entry maps an output
+     * key to a flat field name (int key => same name on both sides). Missing flat
+     * fields default to 0. No `panels` spec falls back to the flat row.
+     */
+    public static function shapePanels(array $flatRow, array $config): array
+    {
+        $spec = $config['panels'] ?? null;
+        if ($spec === null) {
+            return $flatRow;
+        }
+
+        $out = [];
+        foreach ($spec as $group => $fields) {
+            $sub = [];
+            foreach ($fields as $outKey => $flatKey) {
+                $outKey = is_int($outKey) ? $flatKey : $outKey;
+                $sub[$outKey] = $flatRow[$flatKey] ?? 0;
+            }
+            $out[$group] = $sub;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Best-effort human-readable cadence for the common cron expressions the
+     * scheduler emits; unknown expressions fall back to the raw string.
+     */
+    public static function humanizeCron(string $expr): string
+    {
+        $expr = trim(preg_replace('/\s+/', ' ', $expr));
+
+        $known = [
+            '* * * * *' => 'Every minute',
+            '*/5 * * * *' => 'Every 5 minutes',
+            '*/10 * * * *' => 'Every 10 minutes',
+            '*/15 * * * *' => 'Every 15 minutes',
+            '*/30 * * * *' => 'Every 30 minutes',
+            '0 * * * *' => 'Hourly',
+            '0 0 * * *' => 'Daily',
+            '0 0 * * 0' => 'Weekly',
+            '0 0 1 * *' => 'Monthly',
+            '0 0 1 1 *' => 'Yearly',
+        ];
+        if (isset($known[$expr])) {
+            return $known[$expr];
+        }
+
+        // "*/N * * * *" for any N minutes.
+        if (preg_match('#^\*/(\d+) \* \* \* \*$#', $expr, $m)) {
+            return "Every {$m[1]} minutes";
+        }
+        // "M H * * *" -> "Daily at HH:MM".
+        if (preg_match('#^(\d+) (\d+) \* \* \*$#', $expr, $m)) {
+            return sprintf('Daily at %02d:%02d', (int) $m[2], (int) $m[1]);
+        }
+
+        return $expr;
     }
 }

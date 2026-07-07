@@ -95,7 +95,10 @@ creates the `IssueActivity` row, exactly as the old controller's private
   *representative exception* (`file`/`line`/`php_version`/`laravel_version`/
   `handled`), so it isn't a 1:1 `Issue` projection; per the migration plan's
   "pure computed payloads don't need a Resource" carve-out. `uuid` was added
-  to that node directly for retrofit consistency.
+  to that node directly for retrofit consistency. The `stack_frames` node is
+  parsed by the shared `App\Support\StackTrace::parse` (the single source of
+  truth also used by `App\Actions\Exceptions\ShowExceptionGroup`) — `ShowIssue`
+  no longer carries its own inlined copy of that parser.
 
 ## Endpoints
 

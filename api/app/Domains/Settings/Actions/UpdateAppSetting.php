@@ -18,7 +18,7 @@ class UpdateAppSetting
 {
     use AsAction;
 
-    private const RESERVED_KEYS = ['app_id', 'name', 'description', 'environments', 'agent_token_masked', 'template'];
+    private const RESERVED_KEYS = ['app_id', 'name', 'description', 'environments', 'agent_token', 'template'];
 
     public function authorize(ActionRequest $request): bool
     {

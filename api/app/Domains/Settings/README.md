@@ -46,8 +46,9 @@ relocate" rule.
 
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
-| `ShowAppSettings` | The settings KV map merged with `app_id`/`name`/`description`/`environments`/masked `agent_token`/current template summary. | `authorize()` always allows. No rules — pure read. |
-| `UpdateAppSetting` | Upserts one `Setting` row (`app_id`+`key` unique). | `authorize()` 422s if `{key}` is one of the reserved computed keys (`app_id`, `name`, `description`, `environments`, `agent_token_masked`, `template`) — these live on the settings payload but aren't genuine settings. `rules()`: `value` required string. |
+| `ShowAppSettings` | The settings KV map merged with `app_id`/`name`/`description`/`environments`/masked `agent_token`/current template summary. The masked token is serialized under the `agent_token` key (matching `docs/api-contract.md` and `RegenerateAppToken`'s plaintext response key — the mask is what distinguishes the read from the one-shot regenerate). | `authorize()` always allows. No rules — pure read. |
+| `ShowAppStorage` | The live on-disk footprint of the `nightowl_*` telemetry tables, read from Postgres system catalogs (`pg_total_relation_size` incl. indexes + TOAST, `pg_class.reltuples` estimate). Returns `{ tables: [{ name, bytes, rows }], total_bytes }`, sorted largest-first. Physical table sizes are shared across every app in the one Postgres, so this reports the whole-database telemetry footprint (as the docs' "Total telemetry footprint: … including indexes" headline describes) — the `{app}` binding scopes the page/auth, not the numbers. | `authorize()` always allows. No rules — pure read. |
+| `UpdateAppSetting` | Upserts one `Setting` row (`app_id`+`key` unique). | `authorize()` 422s if `{key}` is one of the reserved computed keys (`app_id`, `name`, `description`, `environments`, `agent_token`, `template`) — these live on the settings payload but aren't genuine settings. `rules()`: `value` required string. |
 | `UpdateAppEnvironment` | Sets/adds one environment's color in `App.environments`. | `authorize()` always allows. `rules()`: `color` required string, max 9 chars (`#RRGGBBAA`). |
 | `RegenerateAppToken` | Issues a fresh `nwt_`-prefixed agent token, returned in plaintext once. | `authorize()` always allows. No rules. |
 | `ListAppTemplates` | This app's `Template`s, most recently synced first. | `authorize()` always allows. No rules. |
@@ -91,7 +92,8 @@ batch — see `app/Domains/Issues/README.md`.
   `{app}` in the URL). This domain doesn't import `Domains/Apps/Resources`
   (no cross-domain imports), so this is its own copy rather than a shared
   one, per the migration plan.
-- `ShowAppSettings`'s settings KV map, `UpdateAppSetting`'s/
+- `ShowAppSettings`'s settings KV map, `ShowAppStorage`'s catalog-stat
+  `{tables, total_bytes}` array, `UpdateAppSetting`'s/
   `UpdateAppEnvironment`'s/`RegenerateAppToken`'s/`ApplyAppTemplate`'s
   payloads are pure computed arrays, not serialized models — no Resource
   for those, per the migration plan's "pure computed payloads don't need a
@@ -105,6 +107,7 @@ batch — see `app/Domains/Issues/README.md`.
 | Method | URI | Action | Middleware |
 |---|---|---|---|
 | GET | `/api/apps/{app}/settings` | `ShowAppSettings` | `auth:sanctum` (root aggregator group) |
+| GET | `/api/apps/{app}/settings/storage` | `ShowAppStorage` | `auth:sanctum` |
 | PUT | `/api/apps/{app}/settings/{key}` | `UpdateAppSetting` | `auth:sanctum` |
 | PUT | `/api/apps/{app}/environments/{name}` | `UpdateAppEnvironment` | `auth:sanctum` |
 | POST | `/api/apps/{app}/token/regenerate` | `RegenerateAppToken` | `auth:sanctum` |

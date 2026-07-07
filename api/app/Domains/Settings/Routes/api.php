@@ -6,6 +6,7 @@ use App\Domains\Settings\Actions\ListAlertChannels;
 use App\Domains\Settings\Actions\ListAppTemplates;
 use App\Domains\Settings\Actions\RegenerateAppToken;
 use App\Domains\Settings\Actions\ShowAppSettings;
+use App\Domains\Settings\Actions\ShowAppStorage;
 use App\Domains\Settings\Actions\StoreAlertChannel;
 use App\Domains\Settings\Actions\SyncAppTemplate;
 use App\Domains\Settings\Actions\ToggleAlertChannel;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Route;
 // (docs/pages/settings.md).
 Route::prefix('apps/{app}')->group(function () {
     Route::get('/settings', ShowAppSettings::class);
+    Route::get('/settings/storage', ShowAppStorage::class);
     Route::put('/settings/{key}', UpdateAppSetting::class);
     Route::put('/environments/{name}', UpdateAppEnvironment::class);
     Route::post('/token/regenerate', RegenerateAppToken::class);

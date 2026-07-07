@@ -43,7 +43,9 @@ class UserDetailApiTest extends TestCase
         $response = $this->actingAs($user)->getJson('/api/apps/det_app/users/user_9');
 
         $response->assertOk()
+            ->assertJsonPath('user.id', 'user_9')
             ->assertJsonPath('user.email', 'nine@example.com')
+            ->assertJsonStructure(['user' => ['id', 'name', 'email', 'last_seen']])
             ->assertJsonPath('requests.total', 3)
             ->assertJsonPath('requests.c5xx', 1)
             ->assertJsonPath('top_routes.0.route_path', '/api/orders')

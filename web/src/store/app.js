@@ -16,6 +16,9 @@ export const useAppStore = defineStore('app', {
     period: localStorage.getItem(PERIOD_KEY) ?? '1h',
     timezone: localStorage.getItem(TIMEZONE_KEY) ?? 'Local',
     timeFormat: localStorage.getItem(TIME_FORMAT_KEY) ?? '24h',
+    // App-switcher "All environments" filter. `null` = all; not persisted —
+    // it's app-scoped and reset when the current app changes.
+    environment: null,
   }),
 
   getters: {
@@ -56,6 +59,12 @@ export const useAppStore = defineStore('app', {
     setTimeFormat(timeFormat) {
       this.timeFormat = timeFormat
       localStorage.setItem(TIME_FORMAT_KEY, timeFormat)
+    },
+
+    // `null` clears the filter ("All environments"). List pages read this and
+    // pass it as `?environment=` on their fetches.
+    setEnvironment(environment) {
+      this.environment = environment
     },
   },
 })

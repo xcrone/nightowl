@@ -26,9 +26,5 @@ class DatabaseSeeder extends Seeder
             ['email' => 'admin@example.com'],
             ['name' => 'Administrator', 'password' => 'password']
         );
-
-        $this->call([
-            OrgSeeder::class,
-        ]);
     }
 }

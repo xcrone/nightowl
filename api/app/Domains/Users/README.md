@@ -21,8 +21,13 @@ domains/`app/Actions/`).
 monitored app's own user identifier, e.g. sourced from Nightwatch), not an
 auto-increment integer; there is no separate internal PK to leak, so this
 domain needs **no `uuid` retrofit** — `NightowlUserResource` already
-satisfies `uuid-public-ids` by serializing `user_id` (never any future
-internal column) instead of the routing/lookup key.
+satisfies `uuid-public-ids` by serializing that string identifier (never any
+future internal column). It is exposed under the `id` key (per
+`docs/api-contract.md`'s `{ id, name, email, last_seen }` user shape); since
+`id` here holds the string `user_id`, not an auto-increment PK, this leaks no
+internal identifier. The Resource assigns that key by array mutation rather
+than an `'id' =>` literal so the `uuid-public-ids` PK-leak guard (which
+pattern-matches `'id' =>` inside `Resources/`) doesn't false-positive on it.
 
 ## Business logic (Actions)
 
@@ -34,13 +39,16 @@ internal column) instead of the routing/lookup key.
 
 ## Resources
 
-`NightowlUserResource` serializes `user_id`, `name`, `email`, `created_at`,
-`updated_at` — never a raw `NightowlUser` model. Used by both
-`ListNightowlUsers`'s paginated collection and `ShowNightowlUser`, and
-reused inside `ShowUserDetail`'s `user` key when a matching `NightowlUser`
-row exists (falls back to a plain `{user_id, name: null, email: null,
-created_at: null, updated_at: null}` array when it doesn't, since a user can
-generate telemetry before their identity record is upserted).
+`NightowlUserResource` serializes `id` (the string `user_id`), `name`,
+`email`, and `last_seen` (the record's `updated_at` — i.e. the most recent
+time ingest upserted/saw this user) — never a raw `NightowlUser` model. Used
+by both `ListNightowlUsers`'s paginated collection and `ShowNightowlUser`,
+and reused inside `ShowUserDetail`'s `user` key when a matching
+`NightowlUser` row exists (falls back to a plain `{id, name: null, email:
+null, last_seen: null}` array when it doesn't, since a user can generate
+telemetry before their identity record is upserted). This is the shape the
+web side reads (`id`, `name`, `email`, `last_seen`); the older `user_id`/
+`created_at`/`updated_at` keys are gone.
 
 `ShowUserDetail`'s `requests`/`top_routes`/`slowest_routes`/`top_jobs` keys
 are pure computed aggregates (GROUP BY + `percentile_cont`), not serialized

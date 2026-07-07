@@ -152,6 +152,109 @@ class TelemetryApiTest extends TestCase
         $this->assertSame([$open->id], $ids);
     }
 
+    public function test_issues_assignment_filter_all_returns_every_issue(): void
+    {
+        $user = User::factory()->create(['email' => 'me@example.test']);
+        Issue::factory()->create(['assigned_to' => null]);
+        Issue::factory()->create(['assigned_to' => 'me@example.test']);
+        Issue::factory()->create(['assigned_to' => 'someone@example.test']);
+
+        // Both explicit ?assignment=all and its absence must be unfiltered.
+        $this->actingAs($user)->getJson('/api/apps/test_app/issues?assignment=all')
+            ->assertOk()->assertJsonCount(3, 'data');
+
+        $this->actingAs($user)->getJson('/api/apps/test_app/issues')
+            ->assertOk()->assertJsonCount(3, 'data');
+    }
+
+    public function test_issues_assignment_filter_unassigned_matches_null_assignee(): void
+    {
+        $user = User::factory()->create(['email' => 'me@example.test']);
+        $unassigned = Issue::factory()->create(['assigned_to' => null]);
+        Issue::factory()->create(['assigned_to' => 'me@example.test']);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?assignment=unassigned');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$unassigned->id], $ids);
+    }
+
+    public function test_issues_assignment_filter_mine_matches_authenticated_user_email(): void
+    {
+        $user = User::factory()->create(['email' => 'me@example.test']);
+        Issue::factory()->create(['assigned_to' => null]);
+        $mine = Issue::factory()->create(['assigned_to' => 'me@example.test']);
+        Issue::factory()->create(['assigned_to' => 'someone@example.test']);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?assignment=mine');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$mine->id], $ids);
+    }
+
+    public function test_issues_are_sortable_by_id_and_priority(): void
+    {
+        $user = User::factory()->create();
+        $a = Issue::factory()->create(['priority' => 'high']);
+        $b = Issue::factory()->create(['priority' => 'low']);
+        $c = Issue::factory()->create(['priority' => 'medium']);
+
+        // id ascending — proves 'id' is now an accepted sort column rather
+        // than silently falling back to the -last_seen_at default.
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?sort=id');
+        $response->assertOk();
+        $this->assertSame([$a->id, $b->id, $c->id], array_column($response->json('data'), 'id'));
+
+        // priority ascending, alphabetically: high, low, medium.
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?sort=priority');
+        $response->assertOk();
+        $this->assertSame(
+            ['high', 'low', 'medium'],
+            array_column($response->json('data'), 'priority')
+        );
+    }
+
+    public function test_issues_list_does_not_leak_search_vector_column(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->create();
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues');
+
+        $response->assertOk();
+        $rows = $response->json('data');
+        $this->assertNotEmpty($rows);
+        $this->assertArrayNotHasKey('search_vector', $rows[0]);
+    }
+
+    public function test_exceptions_list_does_not_leak_search_vector_column(): void
+    {
+        $user = User::factory()->create();
+        ExceptionRecord::factory()->create();
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/exceptions');
+
+        $response->assertOk();
+        $rows = $response->json('data');
+        $this->assertNotEmpty($rows);
+        $this->assertArrayNotHasKey('search_vector', $rows[0]);
+    }
+
+    public function test_logs_list_does_not_leak_search_vector_column(): void
+    {
+        $user = User::factory()->create();
+        LogRecord::factory()->create();
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/logs');
+
+        $response->assertOk();
+        $rows = $response->json('data');
+        $this->assertNotEmpty($rows);
+        $this->assertArrayNotHasKey('search_vector', $rows[0]);
+    }
+
     public function test_logs_level_filter(): void
     {
         $user = User::factory()->create();
@@ -162,6 +265,60 @@ class TelemetryApiTest extends TestCase
 
         $ids = array_column($response->json('data'), 'id');
         $this->assertSame([$error->id], $ids);
+    }
+
+    public function test_environment_scope_filters_a_raw_request_list(): void
+    {
+        $user = User::factory()->create();
+        $prod = RequestRecord::factory()->create(['environment' => 'production']);
+        RequestRecord::factory()->create(['environment' => 'staging']);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?environment=production');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$prod->id], $ids);
+    }
+
+    public function test_empty_environment_returns_all_environments(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['environment' => 'production']);
+        RequestRecord::factory()->create(['environment' => 'staging']);
+
+        // Empty string (the "All environments" default) must not filter.
+        $this->actingAs($user)->getJson('/api/apps/test_app/requests?environment=')
+            ->assertOk()->assertJsonCount(2, 'data');
+
+        // Absent altogether behaves identically.
+        $this->actingAs($user)->getJson('/api/apps/test_app/requests')
+            ->assertOk()->assertJsonCount(2, 'data');
+    }
+
+    public function test_environment_scope_filters_the_issues_list(): void
+    {
+        $user = User::factory()->create();
+        $prod = Issue::factory()->create(['environment' => 'production']);
+        Issue::factory()->create(['environment' => 'staging']);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/issues?environment=production');
+
+        $response->assertOk();
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$prod->id], $ids);
+    }
+
+    public function test_environment_scope_composes_with_existing_filters(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['environment' => 'production', 'status_code' => 200]);
+        $match = RequestRecord::factory()->create(['environment' => 'production', 'status_code' => 500]);
+        RequestRecord::factory()->create(['environment' => 'staging', 'status_code' => 500]);
+
+        $response = $this->actingAs($user)->getJson('/api/apps/test_app/requests?environment=production&failed=1');
+
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertSame([$match->id], $ids);
     }
 
     public function test_invalid_sort_column_falls_back_to_default(): void

@@ -55,6 +55,11 @@ class PreviewDataManagement
             'to' => ['required', 'date'],
             'types' => ['required', 'array', 'min:1'],
             'types.*' => ['string'],
+            // Optional per-type "Filters" (docs/pages/data-management.md):
+            // `user_id` narrows any category (all carry a nullable user_id
+            // column); `level` narrows the Logs category only.
+            'user_id' => ['nullable', 'string'],
+            'level' => ['nullable', 'string'],
         ];
     }
 
@@ -65,14 +70,31 @@ class PreviewDataManagement
         $to = Carbon::parse($data['to']);
         $from = isset($data['from']) ? Carbon::parse($data['from']) : Carbon::createFromTimestamp(0);
 
+        $userId = $data['user_id'] ?? null;
+        $level = $data['level'] ?? null;
+
         $counts = [];
         foreach ($data['types'] as $type) {
             if (! isset(self::TYPES[$type])) {
                 continue;
             }
             $model = self::TYPES[$type];
-            $counts[$type] = $model::query()->forApp($app->app_id)
-                ->whereBetween('created_at', [$from, $to])->count();
+            $query = $model::query()->forApp($app->app_id)
+                ->whereBetween('created_at', [$from, $to]);
+
+            // user_id applies to every category — each nightowl_* telemetry
+            // table has a nullable user_id column.
+            if ($userId !== null && $userId !== '') {
+                $query->where('user_id', $userId);
+            }
+
+            // level is only meaningful for logs (the sole category with a
+            // level column); ignored for the rest.
+            if ($type === 'logs' && $level !== null && $level !== '') {
+                $query->where('level', $level);
+            }
+
+            $counts[$type] = $query->count();
         }
 
         return ['counts' => $counts, 'total' => array_sum($counts)];

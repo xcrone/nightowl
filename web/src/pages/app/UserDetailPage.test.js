@@ -9,7 +9,7 @@ import api from '../../services/api'
 import UserDetailPage from './UserDetailPage.vue'
 
 const payload = {
-  user: { id: 'user_11', name: 'Priya Nair', email: 'priya.nair11@example.com', last_seen: '7m ago' },
+  user: { id: 'user_11', name: 'Priya Nair', email: 'priya.nair11@example.com', last_seen: new Date(Date.now() - 7 * 60 * 1000 - 30 * 1000).toISOString() },
   requests: { total: 42, c2xx: 38, c4xx: 3, c5xx: 1 },
   top_routes: [{ method: 'GET', route_path: '/orders', count: 20 }],
   slowest_routes: [{ method: 'POST', route_path: '/checkout', p95: 1570000 }],
@@ -46,6 +46,9 @@ describe('UserDetailPage', () => {
     expect(first[1].params.period).toBe('7d')
 
     expect(wrapper.text()).toContain('Priya Nair')
+    // last_seen rendered via the relative-time formatter (new user shape)
+    expect(wrapper.text()).toContain('Last seen')
+    expect(wrapper.text()).toContain('7m ago')
     expect(wrapper.text()).toContain('Top Routes')
     expect(wrapper.text()).toContain('/orders')
     expect(wrapper.text()).toContain('Slowest Routes')

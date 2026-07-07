@@ -36,13 +36,22 @@ const state = reactive({
   from: '',
   to: maxEnd,
   selected: new Set(),
+  userId: '',
+  level: '',
   preview: null,
   loading: false,
 })
 
 const validationError = ref('')
 
+// PSR-3 log levels for the Logs-only "Log Level" filter.
+const LOG_LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug']
+
 const allSelected = computed(() => state.selected.size === dataTypes.length)
+// The optional per-type filters card only appears once a type is chosen; the
+// Log Level control is Logs-specific.
+const hasSelection = computed(() => state.selected.size > 0)
+const logsSelected = computed(() => state.selected.has('logs'))
 
 function toggleType(slug) {
   if (state.selected.has(slug)) state.selected.delete(slug)
@@ -65,11 +74,15 @@ async function preview() {
   }
   state.loading = true
   try {
-    const { data } = await api.post(`/api/apps/${appId.value}/data-management/preview`, {
+    const body = {
       from: state.from || null,
       to: state.to,
       types: [...state.selected],
-    })
+    }
+    // Only send non-empty optional filters; `level` applies to logs only.
+    if (state.userId) body.user_id = state.userId
+    if (state.level && logsSelected.value) body.level = state.level
+    const { data } = await api.post(`/api/apps/${appId.value}/data-management/preview`, body)
     state.preview = data
   } catch {
     state.preview = null
@@ -147,16 +160,42 @@ const previewRows = computed(() => {
       </div>
 
       <p v-if="validationError" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ validationError }}</p>
+    </StatPanel>
 
-      <div class="mt-4 flex justify-end">
-        <button
-          type="button"
-          class="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-          :disabled="state.loading"
-          @click="preview"
-        >{{ state.loading ? 'Previewing…' : 'Preview Impact' }}</button>
+    <!-- Per-type optional filters (appears once a data type is chosen) -->
+    <StatPanel v-if="hasSelection" title="Filters (optional)">
+      <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">Narrow the deletion to specific records. Leave blank to match all.</p>
+      <div class="flex flex-wrap items-end gap-4">
+        <label class="flex flex-col text-xs text-gray-500 dark:text-gray-400">
+          User
+          <input
+            v-model="state.userId"
+            type="text"
+            placeholder="All Users"
+            class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          />
+        </label>
+        <label v-if="logsSelected" class="flex flex-col text-xs text-gray-500 dark:text-gray-400">
+          Log Level
+          <select
+            v-model="state.level"
+            class="mt-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          >
+            <option value="">All Levels</option>
+            <option v-for="lvl in LOG_LEVELS" :key="lvl" :value="lvl">{{ lvl }}</option>
+          </select>
+        </label>
       </div>
     </StatPanel>
+
+    <div class="flex justify-end">
+      <button
+        type="button"
+        class="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+        :disabled="state.loading"
+        @click="preview"
+      >{{ state.loading ? 'Previewing…' : 'Preview Impact' }}</button>
+    </div>
 
     <!-- Preview result -->
     <StatPanel v-if="state.preview" title="Preview Impact">

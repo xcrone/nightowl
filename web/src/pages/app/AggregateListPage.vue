@@ -39,6 +39,7 @@ async function load() {
   if (!cfg) return
   state.loading = true
   const params = { period: app.period }
+  if (app.environment) params.environment = app.environment
   if (state.sort) params.sort = state.sort
   if (state.search) params.q = state.search
   if (cfg.scope && state.scopeValue) params[cfg.scope.param] = state.scopeValue
@@ -104,10 +105,14 @@ function onScope(value) {
   load()
 }
 function onRowClick(row) {
-  if (cfg?.rowLink) router.push(cfg.rowLink(row, appId.value))
+  if (!cfg?.rowLink) return
+  // rowLink returns null for a row with a null/empty group key (broken URL) —
+  // no-op, matching how non-clickable resources behave.
+  const to = cfg.rowLink(row, appId.value)
+  if (to) router.push(to)
 }
 
-watch(() => app.period, load, { immediate: true })
+watch([() => app.period, () => app.environment], load, { immediate: true })
 </script>
 
 <template>

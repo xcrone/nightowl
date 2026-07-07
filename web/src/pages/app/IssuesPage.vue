@@ -45,6 +45,7 @@ async function load() {
   if (!appId.value) return
   state.loading = true
   const params = { period: app.period, type: state.type, sort: state.sort }
+  if (app.environment) params.environment = app.environment
   if (state.status) params.status = state.status
   if (state.search) params.q = state.search
   try {
@@ -119,7 +120,7 @@ const ASSIGN_PILLS = [
   { value: 'mine', label: 'Mine' },
 ]
 
-watch(() => app.period, load, { immediate: true })
+watch([() => app.period, () => app.environment], load, { immediate: true })
 </script>
 
 <template>
@@ -233,7 +234,8 @@ watch(() => app.period, load, { immediate: true })
             @click="goto(row)"
           >
             <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">#{{ row.id }}</td>
-            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ priorityLabel(row) }}</td>
+            <!-- Priority is non-interactive (docs/pages/issues-list.md): clicking it must not navigate. -->
+            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400" @click.stop>{{ priorityLabel(row) }}</td>
             <td class="max-w-md px-3 py-2">
               <div class="truncate font-semibold text-gray-900 dark:text-gray-100">{{ row.exception_class }}</div>
               <div class="truncate text-xs text-gray-500 dark:text-gray-400">{{ row.exception_message }}</div>
@@ -242,7 +244,8 @@ watch(() => app.period, load, { immediate: true })
             <td class="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{{ row.users_count ?? 0 }}</td>
             <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ relativeTime(row.first_seen_at) }}</td>
             <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ relativeTime(row.last_seen_at) }}</td>
-            <td class="px-3 py-2">
+            <!-- Assigned is non-interactive (docs/pages/issues-list.md): clicking it must not navigate. -->
+            <td class="px-3 py-2" @click.stop>
               <span
                 v-if="row.assigned_to"
                 class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700 dark:bg-primary-500/15 dark:text-primary-400"

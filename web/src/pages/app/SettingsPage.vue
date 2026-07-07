@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
-import { relativeTime } from '../../utils/format'
+import { relativeTime, formatBytes } from '../../utils/format'
 import StatPanel from '../../components/StatPanel.vue'
 
 // Per-app configuration hub: App ID, onboarding template (sync/apply),
@@ -32,6 +32,33 @@ const syncing = ref(false)
 const TABS = ['Environments', 'Thresholds', 'Issues', 'Alerts', 'Storage', 'Danger Zone']
 const tabKey = (t) => t.toLowerCase().replace(/\s+/g, '-')
 
+// Resource types that support a response-time (duration) threshold. Each maps to
+// a settings key `threshold.<slug>.duration_ms` persisted via PUT settings/{key}.
+const RESOURCE_TYPES = [
+  { label: 'Routes', slug: 'requests' },
+  { label: 'Jobs', slug: 'jobs' },
+  { label: 'Commands', slug: 'commands' },
+  { label: 'Scheduled Tasks', slug: 'schedule' },
+  { label: 'Queries', slug: 'queries' },
+  { label: 'Outgoing Requests', slug: 'outgoing_requests' },
+  { label: 'Mail', slug: 'mail' },
+  { label: 'Notifications', slug: 'notifications' },
+  { label: 'Cache', slug: 'cache' },
+]
+const thresholdKey = (slug) => `threshold.${slug}.duration_ms`
+const DEFAULT_THRESHOLD_MS = 1000
+
+// slug -> { value: string, active: boolean }
+const thresholds = reactive({})
+
+const AUTO_RESOLVE_OPTIONS = [3, 7, 14, 30, 60, 90]
+const AUTO_RESOLVE_KEY = 'issues.auto_resolve_days'
+const autoResolveDays = ref('14')
+const issuesSaving = ref(false)
+
+const storage = reactive({ loading: false, loaded: false, tables: [], totalBytes: 0 })
+const formatRows = (rows) => Number(rows ?? 0).toLocaleString('en-US')
+
 const appName = computed(() => state.settings.name ?? app.current?.name ?? 'App')
 const appIdValue = computed(() => state.settings.app_id ?? appId.value)
 
@@ -48,12 +75,15 @@ async function load() {
     const s = data.settings ?? data
     state.settings = s
     state.template = s.template ?? data.template ?? {}
-    state.agentTokenMasked = s.agent_token_masked ?? s.agent_token ?? data.agent_token ?? ''
+    state.agentTokenMasked = s.agent_token ?? data.agent_token ?? ''
     state.environments = normalizeEnvs(s.environments ?? data.environments)
+    hydrateThresholds(s)
+    autoResolveDays.value = String(s[AUTO_RESOLVE_KEY] ?? 14)
   } catch {
     state.settings = {}
     state.template = {}
     state.environments = []
+    hydrateThresholds({})
   } finally {
     state.loading = false
   }
@@ -64,6 +94,56 @@ function normalizeEnvs(envs) {
   if (!envs) return []
   if (Array.isArray(envs)) return envs.map((e) => ({ name: e.name, color: e.color ?? '#6b7280' }))
   return Object.entries(envs).map(([name, color]) => ({ name, color }))
+}
+
+// Populate the threshold rows from the flat settings map: a key present ⇒ an
+// active (already-configured) row, otherwise an "Add threshold" affordance.
+function hydrateThresholds(s) {
+  for (const t of RESOURCE_TYPES) {
+    const existing = s?.[thresholdKey(t.slug)]
+    thresholds[t.slug] = {
+      value: existing != null ? String(existing) : '',
+      active: existing != null,
+    }
+  }
+}
+
+function addThreshold(slug) {
+  thresholds[slug].active = true
+  if (!thresholds[slug].value) thresholds[slug].value = String(DEFAULT_THRESHOLD_MS)
+}
+
+async function saveThreshold(slug) {
+  const value = Number(thresholds[slug].value)
+  if (!Number.isFinite(value)) return
+  // UpdateAppSetting requires `value` to be a string (is_string()).
+  try {
+    await api.put(`/api/apps/${appId.value}/settings/${thresholdKey(slug)}`, { value: String(value) })
+  } catch { /* demo no-op */ }
+}
+
+async function saveIssues() {
+  issuesSaving.value = true
+  try {
+    await api.put(`/api/apps/${appId.value}/settings/${AUTO_RESOLVE_KEY}`, { value: String(Number(autoResolveDays.value)) })
+  } catch { /* demo no-op */ } finally {
+    issuesSaving.value = false
+  }
+}
+
+async function loadStorage() {
+  storage.loading = true
+  try {
+    const { data } = await api.get(`/api/apps/${appId.value}/settings/storage`)
+    storage.tables = data.tables ?? []
+    storage.totalBytes = data.total_bytes ?? 0
+    storage.loaded = true
+  } catch {
+    storage.tables = []
+    storage.totalBytes = 0
+  } finally {
+    storage.loading = false
+  }
 }
 
 async function loadAlertChannels() {
@@ -116,6 +196,7 @@ async function regenerateToken() {
 
 watch(activeTab, (tab) => {
   if (tab === 'alerts' && !alertChannels.list.length) loadAlertChannels()
+  if (tab === 'storage' && !storage.loaded) loadStorage()
 })
 
 watch(appId, load, { immediate: true })
@@ -242,6 +323,92 @@ watch(appId, load, { immediate: true })
           </StatPanel>
         </div>
 
+        <!-- Thresholds -->
+        <StatPanel v-else-if="activeTab === 'thresholds'" title="Setting up thresholds">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            Events that run longer than the response-time threshold you set here trigger an
+            automatic issue and notification. Add a threshold per resource type.
+          </p>
+          <ul class="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
+            <li v-for="t in RESOURCE_TYPES" :key="t.slug" class="flex items-center justify-between gap-3 py-2">
+              <span class="text-sm text-gray-700 dark:text-gray-300">{{ t.label }}</span>
+              <div v-if="thresholds[t.slug]?.active" class="flex items-center gap-2">
+                <input
+                  v-model="thresholds[t.slug].value"
+                  type="number"
+                  min="0"
+                  step="50"
+                  class="w-24 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
+                <span class="text-xs text-gray-400 dark:text-gray-500">ms</span>
+                <button
+                  type="button"
+                  class="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                  @click="saveThreshold(t.slug)"
+                >Save</button>
+              </div>
+              <button
+                v-else
+                type="button"
+                class="rounded border border-dashed border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                @click="addThreshold(t.slug)"
+              >Add threshold</button>
+            </li>
+          </ul>
+        </StatPanel>
+
+        <!-- Issues -->
+        <StatPanel v-else-if="activeTab === 'issues'" title="Auto-resolve issues">
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            Automatically resolve an issue once it stops reoccurring within this window.
+          </p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <select
+              v-model="autoResolveDays"
+              class="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            >
+              <option v-for="d in AUTO_RESOLVE_OPTIONS" :key="d" :value="String(d)">{{ d }} days</option>
+            </select>
+            <button
+              type="button"
+              class="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+              :disabled="issuesSaving"
+              @click="saveIssues"
+            >{{ issuesSaving ? 'Saving…' : 'Save' }}</button>
+          </div>
+        </StatPanel>
+
+        <!-- Storage -->
+        <StatPanel v-else-if="activeTab === 'storage'" title="Storage Usage">
+          <p v-if="storage.loading" class="text-sm text-gray-400 dark:text-gray-500">Reading storage footprint…</p>
+          <template v-else>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              Total telemetry footprint:
+              <span class="font-medium">{{ formatBytes(storage.totalBytes) }}</span>
+              across {{ storage.tables.length }} tables, including indexes.
+            </p>
+            <div v-if="storage.tables.length" class="mt-3 overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400 dark:border-gray-700 dark:text-gray-500">
+                    <th class="py-2 pr-4 font-medium">Table</th>
+                    <th class="py-2 pr-4 text-right font-medium">Rows</th>
+                    <th class="py-2 text-right font-medium">Size</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                  <tr v-for="t in storage.tables" :key="t.name">
+                    <td class="py-2 pr-4 font-mono text-gray-700 dark:text-gray-300">{{ t.name }}</td>
+                    <td class="py-2 pr-4 text-right text-gray-600 dark:text-gray-400">{{ formatRows(t.rows) }}</td>
+                    <td class="py-2 text-right text-gray-700 dark:text-gray-300">{{ formatBytes(t.bytes) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="mt-2 text-sm text-gray-400 dark:text-gray-500">No storage data available.</p>
+          </template>
+        </StatPanel>
+
         <!-- Alerts -->
         <StatPanel v-else-if="activeTab === 'alerts'" title="Alert Channels">
           <ul class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -260,17 +427,6 @@ watch(appId, load, { immediate: true })
             <button type="button" disabled class="cursor-not-allowed rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 opacity-50 dark:border-red-500/40 dark:text-red-400">Transfer app</button>
             <button type="button" disabled class="cursor-not-allowed rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white opacity-50">Delete app</button>
           </div>
-        </StatPanel>
-
-        <!-- Other tabs (lighter) -->
-        <StatPanel v-else :title="TABS.find((t) => tabKey(t) === activeTab)">
-          <p class="text-sm text-gray-500 dark:text-gray-400">Configuration for this section is managed here. Changes are disabled in the read-only demo.</p>
-          <dl v-if="Object.keys(state.settings).length" class="mt-3 space-y-1 text-sm">
-            <div v-for="(v, k) in state.settings" :key="k" class="flex justify-between gap-4">
-              <dt class="text-gray-500 dark:text-gray-400">{{ k }}</dt>
-              <dd class="truncate text-gray-700 dark:text-gray-300">{{ typeof v === 'object' ? '…' : v }}</dd>
-            </div>
-          </dl>
         </StatPanel>
       </div>
     </div>

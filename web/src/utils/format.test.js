@@ -6,6 +6,7 @@ import {
   relativeTime,
   absoluteTime,
   formatValue,
+  base64UrlEncode,
 } from './format'
 
 describe('formatDuration', () => {
@@ -90,6 +91,29 @@ describe('absoluteTime', () => {
 
   it('renders nullish as an em dash', () => {
     expect(absoluteTime(null)).toBe('—')
+  })
+})
+
+describe('base64UrlEncode', () => {
+  it('encodes plain ascii aggregate keys', () => {
+    expect(base64UrlEncode('GET')).toBe('R0VU')
+    expect(base64UrlEncode('/api/orders')).toBe('L2FwaS9vcmRlcnM')
+  })
+
+  it('keeps backslashes (FQCNs) out of the path segment', () => {
+    // no `+`, `/`, or `=` may survive — RFC 4648 §5 base64url, padding stripped
+    const out = base64UrlEncode('App\\Jobs\\ProcessPayment')
+    expect(out).toBe('QXBwXEpvYnNcUHJvY2Vzc1BheW1lbnQ')
+    expect(out).not.toMatch(/[+/=]/)
+  })
+
+  it('is UTF-8 safe for multi-byte and reserved characters', () => {
+    expect(base64UrlEncode('café ☕ ~/+slash')).toBe('Y2Fmw6kg4piVIH4vK3NsYXNo')
+  })
+
+  it('renders nullish as an empty string', () => {
+    expect(base64UrlEncode(null)).toBe('')
+    expect(base64UrlEncode(undefined)).toBe('')
   })
 })
 

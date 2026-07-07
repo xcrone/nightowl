@@ -7,6 +7,7 @@ use App\Models\App;
 use App\Models\Telemetry\ExceptionRecord;
 use App\Models\Telemetry\Issue;
 use App\Support\AuthorizesAppScope;
+use App\Support\StackTrace;
 use Lorisleiva\Actions\ActionRequest;
 use Lorisleiva\Actions\Concerns\AsAction;
 
@@ -79,32 +80,10 @@ class ShowIssue
                 'laravel_version' => $representative?->laravel_version,
                 'handled' => (bool) ($representative?->handled ?? false),
             ],
-            'stack_frames' => $this->parseStackFrames($representative?->trace),
+            'stack_frames' => StackTrace::parse($representative?->trace),
             'occurrences' => $occurrences,
             'occurrences_by_environment' => $byEnv,
             'activity' => IssueActivityResource::collection($issue->activity()->get()),
         ]);
-    }
-
-    /** Light parse of a PHP stack-trace string into file:line frames. */
-    private function parseStackFrames(?string $trace): array
-    {
-        if (! $trace) {
-            return [];
-        }
-
-        $frames = [];
-        foreach (preg_split('/\r?\n/', $trace) as $i => $line) {
-            if (preg_match('/(#\d+\s+)?(.+?)\((\d+)\)(:\s*(.*))?/', $line, $m)) {
-                $frames[] = [
-                    'index' => $i,
-                    'file' => trim($m[2]),
-                    'line' => (int) $m[3],
-                    'function' => trim($m[5] ?? ''),
-                ];
-            }
-        }
-
-        return $frames;
     }
 }

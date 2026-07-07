@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
-import { formatDuration } from '../../utils/format'
+import { formatDuration, relativeTime } from '../../utils/format'
 import { methodColor } from '../../resourceConfig'
 import StatPanel from '../../components/StatPanel.vue'
 import BarChartPanel from '../../components/BarChartPanel.vue'
@@ -75,9 +75,15 @@ watch([userId, () => app.period], load, { immediate: true })
           {{ userOpen ? '▾' : '▸' }}
         </button>
       </template>
-      <h3 class="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-        {{ state.user.name ?? state.user.email ?? userId }}
-      </h3>
+      <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          {{ state.user.name ?? state.user.email ?? state.user.id ?? userId }}
+        </h3>
+        <span v-if="state.user.email && state.user.name" class="text-xs text-gray-500 dark:text-gray-400">{{ state.user.email }}</span>
+        <span v-if="state.user.last_seen" class="text-xs text-gray-400 dark:text-gray-500">
+          Last seen {{ relativeTime(state.user.last_seen) }}
+        </span>
+      </div>
       <div v-if="userOpen" class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs dark:bg-gray-800">
         <JsonViewer :data="state.user" />
       </div>

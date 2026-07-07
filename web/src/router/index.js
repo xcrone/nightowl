@@ -12,6 +12,8 @@ import JobsPage from '../pages/app/JobsPage.vue'
 import CommandsPage from '../pages/app/CommandsPage.vue'
 import ScheduledTasksPage from '../pages/app/ScheduledTasksPage.vue'
 import ExceptionsPage from '../pages/app/ExceptionsPage.vue'
+import ExceptionDetailPage from '../pages/app/ExceptionDetailPage.vue'
+import AggregateDetailPage from '../pages/app/AggregateDetailPage.vue'
 import QueriesPage from '../pages/app/QueriesPage.vue'
 import NotificationsPage from '../pages/app/NotificationsPage.vue'
 import MailPage from '../pages/app/MailPage.vue'
@@ -41,6 +43,7 @@ const router = createRouter({
         { path: 'commands', name: 'commands', component: CommandsPage },
         { path: 'scheduled-tasks', name: 'scheduled-tasks', component: ScheduledTasksPage },
         { path: 'exceptions', name: 'exceptions', component: ExceptionsPage },
+        { path: 'exceptions/:key', name: 'exception-detail', component: ExceptionDetailPage },
         { path: 'queries', name: 'queries', component: QueriesPage },
         { path: 'notifications', name: 'notifications', component: NotificationsPage },
         { path: 'mail', name: 'mail', component: MailPage },
@@ -52,6 +55,14 @@ const router = createRouter({
         { path: 'health', name: 'health', component: HealthPage },
         { path: 'data-management', name: 'data-management', component: DataManagementPage },
         { path: 'settings', name: 'settings', component: SettingsPage },
+        // Per-item drill-down for the 8 clickable Activity aggregates. The
+        // `:resource` param is constrained to those 8 so it never shadows a
+        // static list/detail route (users/:userId, issues/:id, exceptions/:key).
+        {
+          path: ':resource(requests|outgoing-requests|jobs|commands|scheduled-tasks|queries|notifications|mail)/:key',
+          name: 'aggregate-detail',
+          component: AggregateDetailPage,
+        },
       ],
     },
   ],

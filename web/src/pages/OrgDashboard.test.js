@@ -3,9 +3,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
 
-vi.mock('../services/api', () => ({ default: { get: vi.fn() }, csrfCookie: vi.fn() }))
+vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() }, csrfCookie: vi.fn() }))
 import api from '../services/api'
 import OrgDashboard from './OrgDashboard.vue'
+import { useAuthStore } from '../store/auth'
 
 const teams = [
   {
@@ -96,5 +97,18 @@ describe('OrgDashboard', () => {
     const card = wrapper.findAll('button').find((b) => b.text().includes('Delta API'))
     await card.trigger('click')
     expect(push).toHaveBeenCalledWith('/dashboard/a1')
+  })
+
+  it('logs out from the top-right account button (finding #13)', async () => {
+    const { wrapper, router } = await mountPage()
+    const auth = useAuthStore()
+    const logoutSpy = vi.spyOn(auth, 'logout')
+    const push = vi.spyOn(router, 'push')
+    const logout = wrapper.find('[aria-label="Log out"]')
+    expect(logout.exists()).toBe(true)
+    await logout.trigger('click')
+    await flushPromises()
+    expect(logoutSpy).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/login')
   })
 })

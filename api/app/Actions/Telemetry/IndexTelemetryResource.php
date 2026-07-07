@@ -3,6 +3,7 @@
 namespace App\Actions\Telemetry;
 
 use App\Models\App;
+use App\Support\EnvironmentScope;
 use App\Support\Period;
 use App\Support\TelemetryQuery;
 use Illuminate\Database\Eloquent\Model;
@@ -39,6 +40,11 @@ class IndexTelemetryResource
             [$from, $to] = Period::resolve($request);
             $query->whereBetween('created_at', [$from, $to]);
         }
+
+        // Page-scope filter (app switcher's "All environments"). Every
+        // telemetry + issues table carries the `environment` column — only the
+        // users dimension table lacks it, and it has no telemetry resource.
+        EnvironmentScope::apply($query, $request);
 
         foreach ($config['filters'] as $key => $filter) {
             TelemetryQuery::applyFilter($query, $filter, $key, $request);

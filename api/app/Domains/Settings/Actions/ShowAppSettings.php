@@ -34,7 +34,7 @@ class ShowAppSettings
             'name' => $app->name,
             'description' => $app->description,
             'environments' => $app->environments ?? [],
-            'agent_token_masked' => $this->mask($app->agent_token),
+            'agent_token' => $this->mask($app->agent_token),
             'template' => $template ? [
                 'name' => $template->name,
                 'synced_at' => optional($template->synced_at)->toIso8601String(),

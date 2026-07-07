@@ -8,6 +8,7 @@ vi.mock('../../services/api', () => ({ default: { get: vi.fn() }, csrfCookie: vi
 vi.mock('vue-chartjs', () => ({ Bar: { template: '<div class="chart" />' }, Line: { template: '<div class="chart" />' } }))
 
 import api from '../../services/api'
+import { base64UrlEncode } from '../../utils/format'
 import AggregateListPage from './AggregateListPage.vue'
 
 const rows = [
@@ -24,13 +25,15 @@ function respond(url) {
   return Promise.resolve({ data: { data: rows, panels } })
 }
 
-async function mountPage(resource = 'requests', impl = respond) {
+async function mountPage(resource = 'requests', impl = respond, appState = {}) {
   api.get.mockImplementation(impl)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard/:appId', component: { template: '<div />' } },
       { path: '/dashboard/:appId/users/:userId', component: { template: '<div />' } },
+      { path: '/dashboard/:appId/exceptions/:key', name: 'exception-detail', component: { template: '<div />' } },
+      { path: '/dashboard/:appId/:resource/:key', name: 'aggregate-detail', component: { template: '<div />' } },
     ],
   })
   await router.push('/dashboard/app1')
@@ -41,7 +44,10 @@ async function mountPage(resource = 'requests', impl = respond) {
     global: {
       plugins: [
         router,
-        createTestingPinia({ createSpy: vi.fn, initialState: { app: { period: '1h', timezone: 'Local', timeFormat: '24h' } } }),
+        createTestingPinia({
+          createSpy: vi.fn,
+          initialState: { app: { period: '1h', timezone: 'Local', timeFormat: '24h', ...appState } },
+        }),
       ],
     },
   })
@@ -81,6 +87,18 @@ describe('AggregateListPage', () => {
     expect(last[1].params.sort).toBe('-p95')
   })
 
+  it('includes the store environment as ?environment= on the fetch', async () => {
+    await mountPage('requests', respond, { environment: 'production' })
+    const first = reqCalls()[0]
+    expect(first[1].params.environment).toBe('production')
+  })
+
+  it('omits ?environment= when no environment is selected', async () => {
+    await mountPage('requests')
+    const first = reqCalls()[0]
+    expect(first[1].params.environment).toBeUndefined()
+  })
+
   it('re-fetches with a scope param when the user filter changes', async () => {
     const { wrapper } = await mountPage('requests')
     const select = wrapper.find('select')
@@ -89,6 +107,55 @@ describe('AggregateListPage', () => {
 
     const last = reqCalls().at(-1)
     expect(last[1].params.user_id).toBe('u1')
+  })
+
+  it('navigates to the aggregate-detail page (base64url key) when a requests row is clicked', async () => {
+    const { wrapper, router } = await mountPage('requests')
+    const push = vi.spyOn(router, 'push')
+    // first data row is /orders
+    const firstRow = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('/orders'))
+    await firstRow.trigger('click')
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledWith(`/dashboard/app1/requests/${base64UrlEncode('/orders')}`)
+    expect(router.currentRoute.value.params.key).toBe(base64UrlEncode('/orders'))
+  })
+
+  it('does not navigate when a clicked row has a null group key (broken URL guard)', async () => {
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      return Promise.resolve({
+        data: { data: [{ method: 'GET', route_path: null, c2xx: 1, c4xx: 0, c5xx: 0, total: 1, avg: 100, p95: 200 }], panels },
+      })
+    }
+    const { wrapper, router } = await mountPage('requests', impl)
+    const push = vi.spyOn(router, 'push')
+    const row = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('GET'))
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('navigates to the exception-groups detail (keyed on class) from an exceptions row', async () => {
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      return Promise.resolve({
+        data: {
+          data: [
+            { class: 'App\\LogicException', message: 'boom', source: 'Ctrl', handled: false, count: 3, users: 2, last_seen: new Date().toISOString() },
+          ],
+          panels: { occurrences: { handled: 0, unhandled: 3, total: 3 } },
+        },
+      })
+    }
+    const { wrapper, router } = await mountPage('exceptions', impl)
+    const push = vi.spyOn(router, 'push')
+    const row = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('App\\LogicException'))
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledWith(`/dashboard/app1/exceptions/${base64UrlEncode('App\\LogicException')}`)
   })
 
   it('client-side filters exceptions by handled/unhandled', async () => {
