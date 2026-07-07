@@ -66,5 +66,20 @@ export const useAppStore = defineStore('app', {
     setEnvironment(environment) {
       this.environment = environment
     },
+
+    // Targeted update after an app edit (e.g. SettingsPage's "Edit app"
+    // modal) — cheaper than refetching /api/apps, and keeps `current` plus
+    // any cached listing (`apps`/`teams`, used by the app switcher) in sync
+    // with the PUT response instead of going stale until the next reload.
+    patchApp(patch) {
+      if (!patch?.app_id) return
+      if (this.current?.app_id === patch.app_id) Object.assign(this.current, patch)
+      const listed = this.apps.find((a) => a.app_id === patch.app_id)
+      if (listed) Object.assign(listed, patch)
+      for (const team of this.teams) {
+        const inTeam = (team.apps ?? []).find((a) => a.app_id === patch.app_id)
+        if (inTeam) Object.assign(inTeam, patch)
+      }
+    },
   },
 })

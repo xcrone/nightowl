@@ -60,7 +60,7 @@ async function mountPage({ orgsList = [org], appsResponse } = {}) {
         createTestingPinia({
           createSpy: vi.fn,
           stubActions: false,
-          initialState: { auth: { user: { email: 'z@x.c' }, checked: true } },
+          initialState: { auth: { user: { name: 'Ada Lovelace', email: 'z@x.c' }, checked: true } },
         }),
       ],
     },
@@ -78,7 +78,7 @@ describe('OrgDashboard', () => {
   it('renders the header, team sections and app cards', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.text()).toContain('Your Apps')
-    expect(wrapper.text()).toContain('Welcome back, Owlworks')
+    expect(wrapper.text()).toContain('Welcome back, Ada Lovelace')
     expect(wrapper.text()).toContain('Delta Payments')
     expect(wrapper.text()).toContain('Delta API')
     expect(wrapper.text()).toContain('Northwind API')
@@ -98,6 +98,35 @@ describe('OrgDashboard', () => {
     await wrapper.find('input[type="text"]').setValue('Northwind')
     expect(wrapper.text()).toContain('Northwind API')
     expect(wrapper.text()).not.toContain('Delta API')
+  })
+
+  it('shows a genuine empty state (not "match your search") when there are no teams and no search was entered', async () => {
+    const { wrapper } = await mountPage({ appsResponse: { data: { org, teams: [] } } })
+    expect(wrapper.text()).toContain("You don't have any teams yet.")
+    expect(wrapper.text()).not.toContain('match your search')
+  })
+
+  it('shows "match your search" only once the user has actually typed a query that matches nothing', async () => {
+    const { wrapper } = await mountPage()
+    await wrapper.find('input[type="text"]').setValue('nothing-matches-this')
+    expect(wrapper.text()).toContain('No clients or apps match your search.')
+    expect(wrapper.text()).not.toContain("You don't have any teams yet.")
+  })
+
+  it('Apps tab: shows a genuine empty state when there are no apps and no search was entered', async () => {
+    const { wrapper } = await mountPage({ appsResponse: { data: { org, teams: [] } } })
+    const appsToggle = wrapper.findAll('button').find((b) => b.text() === 'Apps')
+    await appsToggle.trigger('click')
+    expect(wrapper.text()).toContain("You don't have any apps yet.")
+    expect(wrapper.text()).not.toContain('match your search')
+  })
+
+  it('Apps tab: shows "match your search" once a query matches nothing', async () => {
+    const { wrapper } = await mountPage()
+    const appsToggle = wrapper.findAll('button').find((b) => b.text() === 'Apps')
+    await appsToggle.trigger('click')
+    await wrapper.find('input[type="text"]').setValue('nothing-matches-this')
+    expect(wrapper.text()).toContain('No apps match your search.')
   })
 
   it('switches to the flat Apps view', async () => {
@@ -144,6 +173,17 @@ describe('OrgDashboard', () => {
     expect(api.post).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/teams`, { name: 'New Team' })
     expect(wrapper.text()).toContain('New Team')
     expect(wrapper.find('[data-test="team-modal-name"]').exists()).toBe(false)
+  })
+
+  it('shows an inline error and does not call the API when submitting the Add team modal with an empty name', async () => {
+    const { wrapper } = await mountPage()
+
+    await wrapper.find('[data-test="add-team"]').trigger('click')
+    await wrapper.find('[data-test="team-modal-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Team name is required.')
+    expect(api.post).not.toHaveBeenCalled()
   })
 
   it('opens the Add app modal from a team and creates an app', async () => {
@@ -200,7 +240,7 @@ describe('OrgDashboard', () => {
   it('shows no org switcher for a user with just one org', async () => {
     const { wrapper } = await mountPage({ orgsList: [org] })
     expect(wrapper.find('[data-test="org-switcher"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Welcome back, Owlworks')
+    expect(wrapper.text()).toContain('Welcome back, Ada Lovelace')
   })
 
   it('shows an org switcher and switches orgs when the user belongs to more than one', async () => {

@@ -9,6 +9,7 @@ import api, { csrfCookie } from '../services/api'
 import { useAuthStore } from './auth'
 
 const FLAG_KEY = 'nightowl:authenticated'
+const CURRENT_ORG_KEY = 'nightowl:currentOrgUuid'
 
 beforeEach(() => {
   localStorage.clear()
@@ -92,5 +93,17 @@ describe('logout', () => {
 
     expect(auth.user).toBeNull()
     expect(localStorage.getItem(FLAG_KEY)).toBeNull()
+  })
+
+  it('clears the persisted org-switcher selection', async () => {
+    localStorage.setItem(FLAG_KEY, '1')
+    localStorage.setItem(CURRENT_ORG_KEY, 'some-uuid')
+    api.post.mockResolvedValue()
+    const auth = useAuthStore()
+    auth.user = { email: 'admin@example.com' }
+
+    await auth.logout()
+
+    expect(localStorage.getItem(CURRENT_ORG_KEY)).toBeNull()
   })
 })

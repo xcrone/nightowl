@@ -27,6 +27,14 @@ const storage = {
   total_bytes: 289_406_976,
 }
 
+const currentApp = {
+  app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE',
+  name: 'Northwind Web',
+  description: 'The Northwind storefront',
+  db_connection: 'pg://northwind',
+  environments: { production: '#10b981', staging: '#f59e0b' },
+}
+
 async function mountPage() {
   api.get.mockImplementation((url) => {
     if (url.includes('/alert-channels')) return Promise.resolve({ data: { data: [] } })
@@ -43,7 +51,15 @@ async function mountPage() {
   await router.isReady()
   const wrapper = mount(SettingsPage, {
     global: {
-      plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: { app: { apps: [{ app_id: 'other1', name: 'Delta API' }] } } })],
+      plugins: [
+        router,
+        createTestingPinia({
+          createSpy: vi.fn,
+          initialState: {
+            app: { apps: [{ app_id: 'other1', name: 'Delta API' }], current: { ...currentApp } },
+          },
+        }),
+      ],
     },
   })
   await flushPromises()
@@ -68,6 +84,42 @@ describe('SettingsPage', () => {
     // environments (default tab)
     expect(wrapper.text()).toContain('production')
     expect(wrapper.text()).toContain('staging')
+  })
+
+  it('"Edit app" opens the shared app modal prefilled, and saves via PUT /api/apps/{id}', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+    const editButton = wrapper.findAll('button').find((b) => b.text() === 'Edit app')
+    await editButton.trigger('click')
+
+    const dialog = wrapper.find('[role="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('Edit app')
+    // Prefilled from the already-loaded app record (name/description/db_connection).
+    expect(wrapper.find('[data-test="app-modal-name"]').element.value).toBe('Northwind Web')
+
+    api.put.mockResolvedValueOnce({
+      data: { app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE', name: 'Northwind Renamed', description: 'The Northwind storefront', db_connection: 'pg://northwind' },
+    })
+    api.get.mockImplementation((url) => {
+      if (url.includes('/alert-channels')) return Promise.resolve({ data: { data: [] } })
+      if (url.includes('/settings/storage')) return Promise.resolve({ data: storage })
+      return Promise.resolve({ data: { settings: { ...settings, name: 'Northwind Renamed' } } })
+    })
+
+    await wrapper.find('[data-test="app-modal-name"]').setValue('Northwind Renamed')
+    await wrapper.find('[data-test="app-modal-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.put).toHaveBeenCalledWith('/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE', {
+      name: 'Northwind Renamed',
+      description: 'The Northwind storefront',
+      db_connection: 'pg://northwind',
+    })
+    // modal closes and the page header reflects the rename
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Northwind Renamed')
   })
 
   it('reads the masked token from the `agent_token` key (FINDING #4)', async () => {
@@ -196,6 +248,81 @@ describe('SettingsPage', () => {
       expect(transfer.attributes('disabled')).toBeDefined()
       expect(destroy.attributes('disabled')).toBeDefined()
       expect(wrapper.text()).toContain('Destructive actions are disabled in this read-only demo.')
+    })
+  })
+
+  describe('Alerts tab', () => {
+    it('offers an "Add channel" affordance', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Alerts')
+      const addButton = wrapper.findAll('button').find((b) => b.text().includes('Add channel'))
+      expect(addButton).toBeTruthy()
+    })
+
+    it('opens a modal and creates a slack channel, refreshing the list afterward', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Alerts')
+
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      await wrapper.findAll('button').find((b) => b.text().includes('Add channel')).trigger('click')
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+
+      const newChannel = {
+        id: 1,
+        uuid: 'chan-uuid-1',
+        app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE',
+        name: '#incidents',
+        type: 'slack',
+        config: { webhook_url: 'https://hooks.slack.com/services/xxx' },
+        enabled: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      api.post.mockResolvedValueOnce({ data: newChannel })
+      api.get.mockImplementation((url) => {
+        if (url.includes('/alert-channels')) return Promise.resolve({ data: { data: [newChannel] } })
+        if (url.includes('/settings/storage')) return Promise.resolve({ data: storage })
+        return Promise.resolve({ data: { settings } })
+      })
+
+      await wrapper.find('[data-test="alert-channel-modal-name"]').setValue('#incidents')
+      await wrapper.find('[data-test="alert-channel-modal-type"]').setValue('slack')
+      await wrapper.find('[data-test="alert-channel-modal-webhook-url"]').setValue('https://hooks.slack.com/services/xxx')
+      await wrapper.find('[data-test="alert-channel-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(api.post).toHaveBeenCalledWith('/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE/alert-channels', {
+        name: '#incidents',
+        type: 'slack',
+        config: { webhook_url: 'https://hooks.slack.com/services/xxx' },
+      })
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('#incidents')
+    })
+
+    it('shows an inline error and does not call the API when name is empty', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Alerts')
+      await wrapper.findAll('button').find((b) => b.text().includes('Add channel')).trigger('click')
+
+      await wrapper.find('[data-test="alert-channel-modal-type"]').setValue('slack')
+      await wrapper.find('[data-test="alert-channel-modal-webhook-url"]').setValue('https://hooks.slack.com/services/xxx')
+      await wrapper.find('[data-test="alert-channel-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Name is required.')
+      expect(api.post).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Thresholds tab — save confirmation', () => {
+    it('shows a "Saved!" confirmation after a successful save', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Thresholds')
+      const requestsRow = wrapper.findAll('li').find((li) => li.text().startsWith('Routes'))
+      await requestsRow.findAll('button').find((b) => b.text() === 'Save').trigger('click')
+      await flushPromises()
+      expect(requestsRow.text()).toContain('Saved!')
     })
   })
 })

@@ -54,6 +54,11 @@ Note: `docker/Dockerfile`'s build context is the **repo root**, not `api/`
 — it needs both `agent/` and `api/` in context so `composer install` (run
 inside the image, not copied from the host) creates a symlink that actually
 resolves inside the container.
+Note: the `api` container has **no source volume mount** — it runs a
+build-time copy of `agent/`+`api/`. Editing source and hitting
+`localhost:8000` against the Docker stack will not reflect the change until
+you rebuild: `docker compose up -d --build api`. (`php artisan serve`,
+per the non-Docker steps above, doesn't have this problem.)
 
 ## Dashboard architecture
 

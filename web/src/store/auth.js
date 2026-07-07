@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api, { csrfCookie } from '../services/api'
+import { useOrgStore } from './org'
 
 // Non-sensitive "have we logged in on this browser before" signal. Lets the
 // bootstrap check skip GET /api/user entirely for a fresh/logged-out browser,
@@ -45,6 +46,7 @@ export const useAuthStore = defineStore('auth', {
       await api.post('/logout')
       this.user = null
       forgetAuthenticated()
+      useOrgStore().reset()
     },
 
     async fetchUser() {

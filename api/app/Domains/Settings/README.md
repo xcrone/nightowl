@@ -47,7 +47,7 @@ relocate" rule.
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
 | `ShowAppSettings` | The settings KV map merged with `app_id`/`name`/`description`/`environments`/masked `agent_token`/current template summary. The masked token is serialized under the `agent_token` key (matching `docs/api-contract.md` and `RegenerateAppToken`'s plaintext response key — the mask is what distinguishes the read from the one-shot regenerate). | `authorize()` always allows. No rules — pure read. |
-| `ShowAppStorage` | The live on-disk footprint of the `nightowl_*` telemetry tables, read from Postgres system catalogs (`pg_total_relation_size` incl. indexes + TOAST, `pg_class.reltuples` estimate). Returns `{ tables: [{ name, bytes, rows }], total_bytes }`, sorted largest-first. Physical table sizes are shared across every app in the one Postgres, so this reports the whole-database telemetry footprint (as the docs' "Total telemetry footprint: … including indexes" headline describes) — the `{app}` binding scopes the page/auth, not the numbers. | `authorize()` always allows. No rules — pure read. |
+| `ShowAppStorage` | The on-disk footprint of the `nightowl_*` telemetry tables, scoped to `{app}` (docs' "on-disk footprint of the app's NightOwl telemetry tables"). Returns `{ tables: [{ name, bytes, rows }], total_bytes }`, sorted largest-first (by the app's own bytes). Physical table *sizes* (`pg_total_relation_size`, incl. indexes + TOAST) are inherently shared storage — Postgres doesn't segment a table's pages per row value — so each table's `bytes` is this app's proportional share (`table bytes × this app's row count ÷ the table's total row count`, real `COUNT(*)`s rather than `pg_class.reltuples`, which is frequently stale/`-1` on lightly-analyzed tables). `rows` is always the exact `COUNT(*) WHERE app_id = ?` (or, for the two tables with no `app_id` of their own — `nightowl_issue_activity`/`nightowl_issue_comments` — a join to `nightowl_issues.app_id`). `nightowl_reports` has no per-app relation at all (a whole-deployment snapshot) and is excluded from the report entirely rather than misreported as "0" or "everyone's". Previously this reported whole-database totals for every table regardless of `{app}` — a brand-new app with zero telemetry showed other apps' row counts (e.g. `nightowl_logs 25`) since it never filtered by `app_id`; fixed to be properly app-scoped. | `authorize()` always allows. No rules — pure read. |
 | `UpdateAppSetting` | Upserts one `Setting` row (`app_id`+`key` unique). | `authorize()` 422s if `{key}` is one of the reserved computed keys (`app_id`, `name`, `description`, `environments`, `agent_token`, `template`) — these live on the settings payload but aren't genuine settings. `rules()`: `value` required string. |
 | `UpdateAppEnvironment` | Sets/adds one environment's color in `App.environments`. | `authorize()` always allows. `rules()`: `color` required string, max 9 chars (`#RRGGBBAA`). |
 | `RegenerateAppToken` | Issues a fresh `nwt_`-prefixed agent token, returned in plaintext once. | `authorize()` always allows. No rules. |
@@ -150,3 +150,11 @@ beyond `App\Support\AuthorizesAppScope`.
   directly — this domain's `AlertChannelResource` follows the same
   convention rather than inventing a different shape for the same
   identifier.
+- **Storage tab app-scoping fix** (QA crawl finding): `ShowAppStorage`
+  previously reported whole-database `nightowl_*` row counts/sizes for
+  every app, so a brand-new app with zero telemetry showed other apps'
+  data. Fixed to scope by `app_id` (join-scoped for the two tables without
+  their own `app_id` column; `nightowl_reports` excluded as genuinely
+  global). `tests/Feature/Settings/AppStorageApiTest.php` gained
+  `test_storage_is_scoped_to_the_requesting_app`, asserting a zero-telemetry
+  app sees zeros even when another app's rows exist in the same tables.

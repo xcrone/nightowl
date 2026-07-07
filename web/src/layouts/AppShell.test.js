@@ -49,6 +49,7 @@ function makeRouter() {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/login', component: { template: '<div />' } },
+      { path: '/organization', component: { template: '<div />' } },
       { path: '/dashboard/:appId', component: { template: '<div />' } },
     ],
   })
@@ -163,6 +164,98 @@ describe('AppShell — account menu (finding #12)', () => {
     await flushPromises()
     expect(logoutSpy).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  it('"Account" navigates to the Organization page and closes the menu', async () => {
+    const { wrapper, router } = await mountShell()
+    const push = vi.spyOn(router, 'push')
+    await wrapper.find('[data-testid="account-trigger"]').trigger('click')
+    await wrapper.find('[data-testid="account-menu-account"]').trigger('click')
+    expect(push).toHaveBeenCalledWith('/organization')
+    expect(wrapper.find('[data-testid="account-menu"]').exists()).toBe(false)
+  })
+
+  it('"Team" navigates to the Organization page and closes the menu', async () => {
+    const { wrapper, router } = await mountShell()
+    const push = vi.spyOn(router, 'push')
+    await wrapper.find('[data-testid="account-trigger"]').trigger('click')
+    await wrapper.find('[data-testid="account-menu-team"]').trigger('click')
+    expect(push).toHaveBeenCalledWith('/organization')
+    expect(wrapper.find('[data-testid="account-menu"]').exists()).toBe(false)
+  })
+})
+
+describe('AppShell — loading state', () => {
+  it('withholds the layout and RouterView while the app-detail fetch is in flight', async () => {
+    // Never-resolving promise simulates a fetch still in flight.
+    api.get.mockImplementation(() => new Promise(() => {}))
+    api.post.mockResolvedValue({})
+
+    const router = makeRouter()
+    router.push('/dashboard/a1')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [
+          router,
+          createTestingPinia({
+            createSpy: vi.fn,
+            stubActions: false,
+            initialState: {
+              app: { ...JSON.parse(JSON.stringify(appState)), current: null, apps: [] },
+              auth: { user: { email: 'z@x.c' }, checked: true },
+              theme: { mode: 'light', isDark: false },
+            },
+          }),
+        ],
+      },
+    })
+
+    // Deliberately not awaiting flushPromises: the fetch is still pending.
+    expect(wrapper.find('[data-testid="app-switcher-trigger"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('App not found')
+  })
+
+  it('lifts the loading gate and renders the normal layout once the fetch resolves', async () => {
+    let resolveApps
+    let resolveCurrent
+    api.get.mockImplementation((url) =>
+      url === '/api/apps'
+        ? new Promise((resolve) => { resolveApps = resolve })
+        : new Promise((resolve) => { resolveCurrent = resolve }),
+    )
+    api.post.mockResolvedValue({})
+
+    const router = makeRouter()
+    router.push('/dashboard/a1')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [
+          router,
+          createTestingPinia({
+            createSpy: vi.fn,
+            stubActions: false,
+            initialState: {
+              app: { ...JSON.parse(JSON.stringify(appState)), current: null, apps: [] },
+              auth: { user: { email: 'z@x.c' }, checked: true },
+              theme: { mode: 'light', isDark: false },
+            },
+          }),
+        ],
+      },
+    })
+
+    expect(wrapper.find('[data-testid="app-switcher-trigger"]').exists()).toBe(false)
+
+    resolveApps({ data: { org: appState.org, teams } })
+    await flushPromises()
+    resolveCurrent({ data: appState.current })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-switcher-trigger"]').exists()).toBe(true)
   })
 })
 

@@ -75,16 +75,19 @@ function toggleLightDark() {
 }
 
 const appNotFound = ref(false)
+const appLoading = ref(true)
 
 async function loadApp(id) {
   if (!id) return
   appNotFound.value = false
+  appLoading.value = true
   if (!app.apps.length) {
     await app.fetchApps().catch(() => {})
   }
   await app.setCurrentApp(id).catch((e) => {
     if (e?.response?.status === 404) appNotFound.value = true
   })
+  appLoading.value = false
 }
 
 watch(appId, (id) => loadApp(id), { immediate: true })
@@ -94,11 +97,27 @@ async function signOut() {
   await auth.logout()
   router.push('/login')
 }
+
+// "Account" and "Team" both land on the Organization page (org details +
+// membership) — the only existing destination for either concern (see
+// OrganizationPage.vue, also linked from the org-dashboard's gear icon).
+// There's no separate per-user "account" screen or per-team settings page
+// yet, so both menu items route to the same place rather than staying dead.
+function goToOrganization() {
+  accountOpen.value = false
+  router.push('/organization')
+}
 </script>
 
 <template>
   <div
-    v-if="appNotFound"
+    v-if="appLoading"
+    class="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400"
+  >
+    Loading…
+  </div>
+  <div
+    v-else-if="appNotFound"
     class="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
   >
     <p class="text-lg font-semibold">App not found</p>
@@ -264,15 +283,17 @@ async function signOut() {
           >
             <button
               type="button"
+              data-testid="account-menu-account"
               class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-              @click="accountOpen = false"
+              @click="goToOrganization"
             >
               Account
             </button>
             <button
               type="button"
+              data-testid="account-menu-team"
               class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-              @click="accountOpen = false"
+              @click="goToOrganization"
             >
               Team
             </button>

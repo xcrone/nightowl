@@ -81,5 +81,16 @@ export const useOrgStore = defineStore('org', {
       team.apps = (team.apps ?? []).filter((a) => a.app_id !== appId)
       team.apps_count = team.apps.length
     },
+
+    // Clears all org-store state and its persisted org-switcher selection —
+    // called on logout so a subsequent login (possibly a different user, same
+    // browser) doesn't re-request a stale org that 404s for the new session.
+    reset() {
+      this.org = null
+      this.orgs = []
+      this.teams = []
+      this.currentOrgUuid = null
+      localStorage.removeItem(CURRENT_ORG_KEY)
+    },
   },
 })

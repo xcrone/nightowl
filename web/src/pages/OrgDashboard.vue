@@ -1,11 +1,12 @@
 <script setup>
-import { reactive, computed, onMounted, watch } from 'vue'
+import { reactive, computed, onMounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOrgStore } from '../store/org'
 import { useAuthStore } from '../store/auth'
 import api from '../services/api'
 import StatusDot from '../components/StatusDot.vue'
 import Modal from '../components/Modal.vue'
+import AppFormModal from '../components/AppFormModal.vue'
 import { relativeTime } from '../utils/format'
 import { BADGE } from '../resourceConfig'
 
@@ -31,6 +32,10 @@ async function onSwitchOrg(event) {
 }
 
 const query = computed(() => ui.search.trim().toLowerCase())
+// Whether the user has actually typed a search — distinguishes a genuine
+// "you have nothing yet" empty state from a "your search matched nothing"
+// empty state (they read very differently).
+const hasSearch = computed(() => query.value.length > 0)
 
 // Teams (and their apps) filtered by the search box. A team matches if its own
 // name matches, otherwise only its matching apps are kept.
@@ -139,7 +144,11 @@ function openAddTeamModal() {
 }
 
 async function submitAddTeam() {
-  if (!org.org?.uuid || !teamModal.name.trim()) return
+  if (!org.org?.uuid) return
+  if (!teamModal.name.trim()) {
+    teamModal.error = 'Team name is required.'
+    return
+  }
   teamModal.saving = true
   teamModal.error = ''
   try {
@@ -154,61 +163,21 @@ async function submitAddTeam() {
 }
 
 // --- Add/edit app modal --------------------------------------------------
-const appModal = reactive({
-  open: false,
-  mode: 'create',
-  team: null,
-  appId: null,
-  name: '',
-  description: '',
-  db_connection: '',
-  error: '',
-  saving: false,
-})
+// Both flows are the single shared AppFormModal component (also used by
+// SettingsPage.vue's "Edit app" button) so there's one implementation of
+// "create/edit an app", not two.
+const appFormModal = ref(null)
 
 function openAddAppModal(team) {
-  appModal.open = true
-  appModal.mode = 'create'
-  appModal.team = team
-  appModal.appId = null
-  appModal.name = ''
-  appModal.description = ''
-  appModal.db_connection = ''
-  appModal.error = ''
+  appFormModal.value.openCreate(team)
 }
 
 function openEditAppModal(team, appItem) {
-  appModal.open = true
-  appModal.mode = 'edit'
-  appModal.team = team
-  appModal.appId = appItem.app_id
-  appModal.name = appItem.name ?? ''
-  appModal.description = appItem.description ?? ''
-  appModal.db_connection = appItem.db_connection ?? ''
-  appModal.error = ''
+  appFormModal.value.openEdit(appItem, team)
 }
 
-async function submitAppModal() {
-  if (!appModal.name.trim()) return
-  appModal.saving = true
-  appModal.error = ''
-  const payload = {
-    name: appModal.name.trim(),
-    description: appModal.description,
-    db_connection: appModal.db_connection,
-  }
-  try {
-    const { data } =
-      appModal.mode === 'create'
-        ? await api.post(`/api/teams/${appModal.team.uuid}/apps`, payload)
-        : await api.put(`/api/apps/${appModal.appId}`, payload)
-    org.upsertApp(appModal.team.uuid, data)
-    appModal.open = false
-  } catch (e) {
-    appModal.error = e?.response?.data?.message ?? 'Could not save app.'
-  } finally {
-    appModal.saving = false
-  }
+function onAppSaved({ team, app }) {
+  if (team) org.upsertApp(team.uuid, app)
 }
 
 async function deleteApp(team, appItem) {
@@ -232,7 +201,7 @@ async function deleteApp(team, appItem) {
           <div>
             <h1 class="text-xl font-semibold">Your Apps</h1>
             <p v-if="org.orgs.length <= 1" class="text-sm text-gray-500 dark:text-gray-400">
-              Welcome back, {{ org.org?.name ?? '…' }}
+              Welcome back, {{ auth.user?.name ?? '…' }}
             </p>
             <select
               v-else
@@ -439,7 +408,9 @@ async function deleteApp(team, appItem) {
             <p v-if="!team.apps?.length" class="text-sm text-gray-400 dark:text-gray-500">No apps in this team yet.</p>
           </div>
         </section>
-        <p v-if="!filteredTeams.length" class="text-sm text-gray-500 dark:text-gray-400">No clients or apps match your search.</p>
+        <p v-if="!filteredTeams.length" class="text-sm text-gray-500 dark:text-gray-400">
+          {{ hasSearch ? 'No clients or apps match your search.' : "You don't have any teams yet." }}
+        </p>
       </div>
 
       <!-- Apps (flat) view -->
@@ -474,7 +445,9 @@ async function deleteApp(team, appItem) {
             </div>
           </div>
         </button>
-        <p v-if="!flatApps.length" class="text-sm text-gray-500 dark:text-gray-400">No apps match your search.</p>
+        <p v-if="!flatApps.length" class="text-sm text-gray-500 dark:text-gray-400">
+          {{ hasSearch ? 'No apps match your search.' : "You don't have any apps yet." }}
+        </p>
       </div>
     </div>
 
@@ -515,58 +488,6 @@ async function deleteApp(team, appItem) {
     </Modal>
 
     <!-- Add/edit app modal -->
-    <Modal
-      v-if="appModal.open"
-      :title="appModal.mode === 'create' ? `Add app to ${appModal.team?.name}` : 'Edit app'"
-      @close="appModal.open = false"
-    >
-      <div class="space-y-3">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Name</label>
-          <input
-            v-model="appModal.name"
-            type="text"
-            data-test="app-modal-name"
-            autofocus
-            class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Description</label>
-          <input
-            v-model="appModal.description"
-            type="text"
-            class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Database connection</label>
-          <input
-            v-model="appModal.db_connection"
-            type="text"
-            class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          />
-        </div>
-        <p v-if="appModal.error" class="text-xs text-red-600 dark:text-red-400">{{ appModal.error }}</p>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-            @click="appModal.open = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-test="app-modal-submit"
-            class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-            :disabled="appModal.saving"
-            @click="submitAppModal"
-          >
-            {{ appModal.saving ? 'Saving…' : appModal.mode === 'create' ? 'Add app' : 'Save' }}
-          </button>
-        </div>
-      </div>
-    </Modal>
+    <AppFormModal ref="appFormModal" @saved="onAppSaved" />
   </div>
 </template>

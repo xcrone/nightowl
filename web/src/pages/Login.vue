@@ -10,10 +10,19 @@ const form = reactive({ email: '', password: '', error: null, submitting: false 
 
 async function submit() {
   form.error = null
+
+  const email = form.email.trim()
+  const password = form.password.trim()
+
+  if (!email || !password) {
+    form.error = 'Email and password are required.'
+    return
+  }
+
   form.submitting = true
 
   try {
-    await auth.login(form.email, form.password)
+    await auth.login(email, password)
     router.push('/')
   } catch (e) {
     form.error = e.response?.data?.errors?.email?.[0] ?? 'Login failed.'
