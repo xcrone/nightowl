@@ -24,7 +24,7 @@ use Lorisleiva\Actions\Concerns\AsAction;
  * `{key}` is the base64url-encoded exception class (see App\Support\AggregateKey)
  * — the same key the exceptions aggregate list groups by. Occurrences are the
  * raw rows for that class within the period; the associated Issue is resolved
- * via `group_hash` (the dedup key the TelemetrySeeder wires up), falling back
+ * via `group_hash` (the dedup key issues are grouped by), falling back
  * to the class when a row predates group hashing.
  */
 class ShowExceptionGroup

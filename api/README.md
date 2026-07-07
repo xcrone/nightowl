@@ -63,13 +63,9 @@ composer install
 cp .env.example .env && php artisan key:generate
 php artisan nightowl:migrate     # nightowl_* schema (incl. app_id column)
 php artisan migrate              # api primary DB (users, orgs/teams/apps)
-php artisan db:seed              # admin@example.com/password + Owlworks Agency + 4 apps
-php artisan db:seed --class="Database\Seeders\TelemetrySeeder"   # demo telemetry for all apps
+php artisan db:seed              # admin@example.com/password
 php artisan serve                # http://localhost:8000
 ```
-
-`TelemetrySeeder` is dev-only (writes hundreds of rows to the shared Postgres);
-it's not part of the default `DatabaseSeeder`.
 
 ## Tests
 

@@ -171,7 +171,8 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
 - Full CRUD + membership management batch: `StoreOrg`/`UpdateOrg`/`DestroyOrg`,
   `AddOrgMember`/`RemoveOrgMember`, `StoreTeam`/`UpdateTeam`/`DestroyTeam`,
   `StoreApp`/`UpdateApp`/`DestroyApp` — before this batch the only way any
-  `Org`/`Team`/`App`/membership row existed was `database/seeders/OrgSeeder.php`.
+  `Org`/`Team`/`App`/membership row existed was a manual `OrgSeeder` (since removed;
+  `db:seed` now only creates the admin user).
   Every destructive Action that has children (`DestroyOrg` vs. teams,
   `DestroyTeam` vs. apps) refuses with a 422 rather than relying on the DB's
   `cascadeOnDelete` to silently wipe multiple rows from one call — delete the

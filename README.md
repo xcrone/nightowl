@@ -54,8 +54,7 @@ cd api && composer install
 cp .env.example .env && php artisan key:generate
 php artisan nightowl:migrate              # creates the nightowl_* schema (incl. app_id)
 php artisan migrate                       # api's own users + orgs/teams/apps tables (postgres: nightowl_app db)
-php artisan db:seed                       # admin@example.com/password + Owlworks Agency + 4 apps
-php artisan db:seed --class="Database\Seeders\TelemetrySeeder"   # demo telemetry so pages have data
+php artisan db:seed                       # admin@example.com/password
 php artisan serve --port=8000             # or 8001, if 8000 is in use
 
 cd web && pnpm install
@@ -72,10 +71,9 @@ Or the whole stack via Docker:
 cp .env.example .env                      # first time only
 docker compose up -d --remove-orphans
 
-# seed the account structure + demo telemetry (first run):
+# seed the admin user (first run):
 docker compose exec api php artisan migrate --force
 docker compose exec api php artisan db:seed --force
-docker compose exec api php artisan db:seed --class="Database\Seeders\TelemetrySeeder" --force
 ```
 
 (postgres, pgbouncer, the `agent` daemon, the `api` JSON API, and `web`).

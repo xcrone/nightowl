@@ -80,9 +80,8 @@ reference is `docs/api-contract.md`.
   `/dashboard/:appId`, `store/app.js` holds the current app + period (drives
   all fetches), and the aggregated list pages are thin wrappers over
   `AggregateListPage.vue` + `web/src/aggregateConfig.js`.
-- **Seeding:** `db:seed` creates the org/teams/apps + admin user;
-  `db:seed --class=Database\Seeders\TelemetrySeeder` fills demo telemetry for
-  every app (dev-only). Agent Health is synthesized in
+- **Seeding:** `db:seed` creates only the admin user (`admin@example.com`/`password`) —
+  org/team/app and telemetry seeders have been removed. Agent Health is synthesized in
   `App\Actions\Health\ShowAgentHealth` (no data source). Auth is Sanctum SPA
   cookies — use `localhost`, not `127.0.0.1`.
 
