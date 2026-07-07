@@ -40,7 +40,20 @@ class AppApiTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/apps')
             ->assertOk()
-            ->assertJsonStructure(['org' => ['id', 'uuid', 'name', 'account_email'], 'teams' => [['id', 'uuid', 'name', 'apps_count', 'apps']]]);
+            ->assertJsonStructure(['org' => ['id', 'uuid', 'name', 'account_email'], 'teams' => [['id', 'uuid', 'name', 'apps_count', 'apps']]])
+            ->assertJsonPath('teams.0.apps.0.description', null);
+    }
+
+    public function test_apps_endpoint_includes_the_apps_description(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->seedApp(user: $user);
+        $app->update(['description' => 'Handles checkout and payments.']);
+
+        $this->actingAs($user)
+            ->getJson('/api/apps')
+            ->assertOk()
+            ->assertJsonPath('teams.0.apps.0.description', 'Handles checkout and payments.');
     }
 
     public function test_app_show_returns_the_app(): void

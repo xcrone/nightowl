@@ -5,6 +5,7 @@ import Login from '../pages/Login.vue'
 import Register from '../pages/Register.vue'
 import OrgDashboard from '../pages/OrgDashboard.vue'
 import OrganizationPage from '../pages/OrganizationPage.vue'
+import NotFoundPage from '../pages/NotFoundPage.vue'
 
 import AppDashboard from '../pages/app/AppDashboard.vue'
 import IssuesPage from '../pages/app/IssuesPage.vue'
@@ -69,6 +70,10 @@ const router = createRouter({
         },
       ],
     },
+    // Catch-all: without this, an unmatched URL renders nothing at all (see
+    // NotFoundPage.vue's docblock). Public so it shows regardless of auth
+    // state instead of the login guard redirecting a bad link to /login.
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundPage, meta: { public: true } },
   ],
 })
 

@@ -639,10 +639,23 @@ watch(appId, load, { immediate: true })
 
         <!-- Danger Zone -->
         <StatPanel v-else-if="activeTab === 'danger-zone'" title="Danger Zone">
-          <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">Destructive actions are disabled in this read-only demo.</p>
+          <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
+            Transferring an app isn't available yet. This panel stays non-destructive on purpose — to delete this
+            app, use the delete button on its card from the org dashboard instead.
+          </p>
           <div class="flex flex-wrap gap-2">
-            <button type="button" disabled class="cursor-not-allowed rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 opacity-50 dark:border-red-500/40 dark:text-red-400">Transfer app</button>
-            <button type="button" disabled class="cursor-not-allowed rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white opacity-50">Delete app</button>
+            <button
+              type="button"
+              disabled
+              title="Not available yet"
+              class="cursor-not-allowed rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 opacity-50 dark:border-red-500/40 dark:text-red-400"
+            >Transfer app</button>
+            <button
+              type="button"
+              disabled
+              title="Delete this app from the org dashboard instead"
+              class="cursor-not-allowed rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white opacity-50"
+            >Delete app</button>
           </div>
         </StatPanel>
       </div>

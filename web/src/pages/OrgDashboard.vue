@@ -73,6 +73,15 @@ function openApp(appId) {
   router.push(`/dashboard/${appId}`)
 }
 
+// Distinct from the per-app "Agent Health" page (which simulates ingest-pipeline
+// health, always "healthy" — see ShowAgentHealth's docblock). This label reflects
+// whether the app has sent any real telemetry recently, so the wording is kept
+// deliberately different ("telemetry" vs. "Agent Health") to avoid reading as a
+// contradiction of that page.
+function telemetryLabel(appItem) {
+  return appItem.monitoring === 'connected' ? 'telemetry: active' : 'telemetry: no recent data'
+}
+
 async function signOut() {
   await auth.logout()
   router.push('/login')
@@ -417,8 +426,11 @@ async function deleteApp(team, appItem) {
                         title="Active alerts"
                       >⚠ {{ appItem.alerts }}</span>
                     </div>
-                    <p class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500" :title="appItem.db_connection">
-                      {{ appItem.db_connection }}
+                    <p
+                      class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500"
+                      :title="appItem.description || appItem.db_connection"
+                    >
+                      {{ appItem.description || appItem.db_connection }}
                     </p>
                     <div class="mb-3 flex flex-wrap gap-1.5">
                       <span
@@ -440,7 +452,7 @@ async function deleteApp(team, appItem) {
                     </div>
                     <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                       <StatusDot :status="appItem.monitoring" />
-                      <span>monitoring: {{ appItem.monitoring }}</span>
+                      <span>{{ telemetryLabel(appItem) }}</span>
                       <span class="ml-auto">{{ relativeTime(appItem.last_report_at) }}</span>
                     </div>
                   </div>
@@ -469,7 +481,10 @@ async function deleteApp(team, appItem) {
               <h3 class="truncate font-semibold">{{ appItem.name }}</h3>
               <span v-if="appItem.alerts > 0" class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" :class="BADGE.yellow">⚠ {{ appItem.alerts }}</span>
             </div>
-            <p class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500" :title="appItem.db_connection">{{ appItem.db_connection }}</p>
+            <p
+              class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500"
+              :title="appItem.description || appItem.db_connection"
+            >{{ appItem.description || appItem.db_connection }}</p>
             <div class="mb-3 flex flex-wrap gap-1.5">
               <span
                 class="rounded px-2 py-0.5 text-xs font-medium"
@@ -479,10 +494,11 @@ async function deleteApp(team, appItem) {
               >
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="appItem.count_5xx > 0 ? BADGE.red : BADGE.gray">{{ appItem.count_5xx ?? 0 }} 5xx</span>
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="appItem.exceptions > 0 ? BADGE.yellow : BADGE.gray">{{ appItem.exceptions ?? 0 }} exc</span>
+              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="BADGE.gray">{{ appItem.open_issues ?? 0 }} issues</span>
             </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <StatusDot :status="appItem.monitoring" />
-              <span>monitoring: {{ appItem.monitoring }}</span>
+              <span>{{ telemetryLabel(appItem) }}</span>
               <span class="ml-auto">{{ relativeTime(appItem.last_report_at) }}</span>
             </div>
           </div>

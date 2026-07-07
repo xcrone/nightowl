@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useAppStore } from '../store/app'
@@ -42,6 +42,18 @@ function selectEnv(name) {
   app.setEnvironment(name)
   switcherOpen.value = false
 }
+
+// Escape closes whichever sidebar dropdown is open, same as clicking the
+// backdrop — without this, keyboard users have no way to dismiss the menu.
+function closeMenus() {
+  switcherOpen.value = false
+  accountOpen.value = false
+}
+function onKeydown(e) {
+  if (e.key === 'Escape') closeMenus()
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const allItems = navGroups.flatMap((g) => g.items)
 

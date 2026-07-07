@@ -114,6 +114,7 @@ class ListApps
         return [
             'app_id' => $appId,
             'name' => $app->name,
+            'description' => $app->description,
             'db_connection' => $app->db_connection,
             // Server-error rate only (status >= 500) — ordinary client
             // errors (404/401/429/...) are NOT counted here, they're

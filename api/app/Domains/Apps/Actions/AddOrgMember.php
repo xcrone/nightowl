@@ -40,6 +40,19 @@ class AddOrgMember
         ];
     }
 
+    /**
+     * Laravel's default `exists` message ("The selected email is invalid.") reads
+     * as a format complaint even when the email is well-formed — the actual
+     * reason is there's no registered account for it (see class docblock: no
+     * invite flow, only existing accounts can be added).
+     */
+    public function getValidationMessages(): array
+    {
+        return [
+            'email.exists' => 'No NightOwl account exists for that email yet — they need to sign up first.',
+        ];
+    }
+
     public function handle(Org $org, ActionRequest $request)
     {
         $user = User::query()->where('email', $request->validated('email'))->firstOrFail();

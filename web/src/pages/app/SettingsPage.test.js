@@ -247,7 +247,7 @@ describe('SettingsPage', () => {
       const destroy = wrapper.findAll('button').find((b) => b.text() === 'Delete app')
       expect(transfer.attributes('disabled')).toBeDefined()
       expect(destroy.attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('Destructive actions are disabled in this read-only demo.')
+      expect(wrapper.text()).toContain('use the delete button on its card from the org dashboard instead')
     })
   })
 

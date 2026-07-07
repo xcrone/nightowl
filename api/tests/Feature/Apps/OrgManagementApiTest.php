@@ -131,9 +131,15 @@ class OrgManagementApiTest extends TestCase
         $org = Org::query()->create(['name' => 'Org', 'account_email' => 'org@example.com']);
         $org->users()->attach($user);
 
-        $this->actingAs($user)->postJson("/api/orgs/{$org->uuid}/members", [
+        $response = $this->actingAs($user)->postJson("/api/orgs/{$org->uuid}/members", [
             'email' => 'nobody@example.com',
-        ])->assertUnprocessable()->assertJsonValidationErrors(['email']);
+        ]);
+
+        // A well-formed email with no matching account gets a message that
+        // says so, rather than Laravel's default "is invalid" wording, which
+        // reads as a format complaint.
+        $response->assertUnprocessable()->assertJsonValidationErrors(['email']);
+        $this->assertSame('No NightOwl account exists for that email yet — they need to sign up first.', $response->json('errors.email.0'));
     }
 
     public function test_add_member_is_forbidden_for_a_non_member(): void

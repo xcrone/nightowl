@@ -139,6 +139,36 @@ describe('OrgDashboard', () => {
     expect(wrapper.text()).not.toContain('Delta Payments')
   })
 
+  it('Apps tab: shows the same "issues" badge as the Teams view', async () => {
+    const { wrapper } = await mountPage()
+    const appsToggle = wrapper.findAll('button').find((b) => b.text() === 'Apps')
+    await appsToggle.trigger('click')
+    const card = wrapper.findAll('button').find((b) => b.text().includes('Delta API'))
+    expect(card.text()).toContain('1 issues')
+  })
+
+  it("shows an app's description instead of its db_connection when one is set", async () => {
+    const withDescription = {
+      data: {
+        org,
+        teams: [
+          {
+            ...teams[0],
+            apps: [{ ...teams[0].apps[0], description: 'Handles checkout and payments.' }],
+          },
+        ],
+      },
+    }
+    const { wrapper } = await mountPage({ appsResponse: withDescription })
+    expect(wrapper.text()).toContain('Handles checkout and payments.')
+    expect(wrapper.text()).not.toContain('ep-delta:5432/d')
+  })
+
+  it("falls back to db_connection when an app has no description", async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.text()).toContain('ep-delta:5432/d')
+  })
+
   it('navigates into an app dashboard on card click', async () => {
     const { wrapper, router } = await mountPage()
     const push = vi.spyOn(router, 'push')
