@@ -29,22 +29,39 @@ class ListApps
     public function handle(ActionRequest $request)
     {
         // ?org=<uuid> lets a user who belongs to more than one Org pick
-        // which one to view (the org switcher on the dashboard) — scoped
-        // through $request->user()->orgs() so requesting an org the user
-        // doesn't belong to 404s rather than leaking another org's data.
-        // Without the query param: the user's own org, same membership
-        // ListOrgs reads — falls back to the first Org in the table only if
-        // they have no membership at all (demo/dev convenience so the
-        // dashboard is never empty), matching ListOrgs's fallback.
+        // which one to view (the org switcher on the dashboard). Two
+        // distinct miss cases, handled differently:
+        //  - the org exists but the user isn't a member: a deliberate
+        //    request for someone else's org, so it's rejected (404) rather
+        //    than silently substituting a different org and leaking that a
+        //    valid-but-inaccessible org exists.
+        //  - the org doesn't exist at all: the id is stale client-side
+        //    state, not a bad-faith request — web/src/store/org.js's
+        //    currentOrgUuid survives logins/logouts/DB resets in
+        //    localStorage, so it can easily point at an org that's been
+        //    deleted out from under it. Fall back to the user's own org
+        //    exactly like the no-param branch below instead of 404ing: the
+        //    store already re-syncs currentOrgUuid to whatever org actually
+        //    comes back, so this self-heals on the next request.
+        // Falls back to the first Org in the table only if the user has no
+        // membership at all (demo/dev convenience so the dashboard is never
+        // empty), matching ListOrgs's fallback.
         // Previously this always returned Org::query()->firstOrFail()
         // regardless of who was asking, which meant a newly registered user
         // (attached to their own, separate Org) was shown/scoped to
         // whatever Org happened to be first in the table instead of their
         // own — invisible teams/apps, and every management mutation 403ing
         // since they weren't a member of that other Org.
-        $org = $request->filled('org')
-            ? $request->user()->orgs()->where('orgs.uuid', $request->query('org'))->firstOrFail()
-            : ($request->user()->orgs()->first() ?? Org::query()->firstOrFail());
+        $requestedOrg = null;
+        if ($request->filled('org')) {
+            $maybeOrg = Org::query()->where('uuid', $request->query('org'))->first();
+            if ($maybeOrg) {
+                abort_unless($request->user()->orgs()->whereKey($maybeOrg->id)->exists(), 404);
+                $requestedOrg = $maybeOrg;
+            }
+        }
+
+        $org = $requestedOrg ?? $request->user()->orgs()->first() ?? Org::query()->firstOrFail();
 
         $teams = $org->teams()->with('apps')->get()->map(function ($team) {
             // apps_count/apps are computed extras, not raw Team fields, so

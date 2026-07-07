@@ -8,6 +8,7 @@ use App\Models\Telemetry\RequestRecord;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -113,6 +114,31 @@ class AppApiTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/apps?org={$otherOrg->uuid}")
             ->assertNotFound();
+    }
+
+    /**
+     * Regression: web/src/store/org.js persists the selected org's uuid in
+     * localStorage as `currentOrgUuid`, which outlives logins/logouts/DB
+     * resets. If that org is later deleted, the stale uuid used to 404 this
+     * endpoint permanently — org.org never populated, so every mutation
+     * guarded by `if (!org.org?.uuid) return` (save org, add team, add app)
+     * silently no-op'd with no error shown. A missing org should fall back
+     * to the user's own org instead, exactly like the no-param case.
+     */
+    public function test_apps_endpoint_falls_back_to_the_users_own_org_when_the_requested_org_no_longer_exists(): void
+    {
+        $user = User::factory()->create();
+        $myOrg = Org::query()->create(['name' => 'My Org', 'account_email' => 'me@example.com']);
+        $myOrg->users()->attach($user->id);
+        Team::query()->create(['org_id' => $myOrg->id, 'name' => 'My Team']);
+
+        $staleUuid = (string) Str::uuid();
+
+        $this->actingAs($user)
+            ->getJson("/api/apps?org={$staleUuid}")
+            ->assertOk()
+            ->assertJsonPath('org.uuid', $myOrg->uuid)
+            ->assertJsonPath('teams.0.name', 'My Team');
     }
 
     /**
