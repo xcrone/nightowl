@@ -21,6 +21,7 @@ const key = computed(() => route.params.key)
 
 const state = reactive({
   loading: false,
+  notFound: false,
   class: '',
   message: '',
   handled: false,
@@ -74,6 +75,7 @@ async function load() {
   if (!appId.value || !key.value) return
   const seq = ++requestSeq
   state.loading = true
+  state.notFound = false
   const params = { period: app.period, page: state.page }
   try {
     const { data } = await api.get(`/api/apps/${appId.value}/exception-groups/${key.value}`, { params })
@@ -94,7 +96,7 @@ async function load() {
     state.page = page.current_page ?? 1
     state.lastPage = page.last_page ?? 1
     state.total = page.total ?? state.occurrences.length
-  } catch {
+  } catch (e) {
     if (seq !== requestSeq) return
     state.class = ''
     state.message = ''
@@ -111,6 +113,7 @@ async function load() {
     state.page = 1
     state.lastPage = 1
     state.total = 0
+    if (e?.response?.status === 404) state.notFound = true
   } finally {
     if (seq === requestSeq) state.loading = false
   }
@@ -177,7 +180,15 @@ watch(
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div v-if="state.notFound" class="flex flex-col items-center justify-center gap-3 py-24 text-center">
+    <p class="text-lg font-semibold text-gray-900 dark:text-gray-100">Exception not found</p>
+    <p class="text-sm text-gray-500 dark:text-gray-400">It may have been deleted, or the link is incorrect.</p>
+    <RouterLink
+      :to="`/dashboard/${appId}/exceptions`"
+      class="rounded bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+    >Back to Exceptions</RouterLink>
+  </div>
+  <div v-else class="space-y-4">
     <!-- Title bar: exception message + View issue -->
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">

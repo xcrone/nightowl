@@ -20,6 +20,7 @@ const issueId = computed(() => route.params.id)
 
 const state = reactive({
   loading: false,
+  notFound: false,
   issue: {},
   stackFrames: [],
   occurrences: [],
@@ -38,6 +39,7 @@ const assigneeInput = ref('')
 async function load() {
   if (!appId.value || !issueId.value) return
   state.loading = true
+  state.notFound = false
   try {
     const { data } = await api.get(`/api/apps/${appId.value}/issues/${issueId.value}`)
     state.issue = data.issue ?? {}
@@ -46,16 +48,17 @@ async function load() {
     state.occurrencesByEnv = data.occurrences_by_environment ?? []
     state.activity = data.activity ?? []
     assigneeInput.value = state.issue.assigned_to ?? ''
-  } catch {
+  } catch (e) {
     state.issue = {}
     state.stackFrames = []
     state.occurrences = []
     state.occurrencesByEnv = []
     state.activity = []
+    if (e?.response?.status === 404) state.notFound = true
   } finally {
     state.loading = false
   }
-  loadComments()
+  if (!state.notFound) loadComments()
 }
 
 async function loadComments() {
@@ -175,7 +178,15 @@ watch(issueId, load, { immediate: true })
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div v-if="state.notFound" class="flex flex-col items-center justify-center gap-3 py-24 text-center">
+    <p class="text-lg font-semibold text-gray-900 dark:text-gray-100">Issue not found</p>
+    <p class="text-sm text-gray-500 dark:text-gray-400">It may have been deleted, or the link is incorrect.</p>
+    <RouterLink
+      :to="`/dashboard/${appId}/issues`"
+      class="rounded bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+    >Back to Issues</RouterLink>
+  </div>
+  <div v-else class="space-y-4">
     <!-- Title -->
     <div>
       <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">{{ state.issue.exception_class ?? 'Issue' }}</h1>

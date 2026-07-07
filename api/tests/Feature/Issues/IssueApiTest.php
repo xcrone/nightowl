@@ -132,7 +132,7 @@ class IssueApiTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/apps/det_app/issues/{$issue->id}/comments")
             ->assertOk()
-            ->assertJsonCount(1);
+            ->assertJsonCount(1, 'data');
     }
 
     public function test_issue_actions_404_when_hit_through_the_wrong_apps_url(): void

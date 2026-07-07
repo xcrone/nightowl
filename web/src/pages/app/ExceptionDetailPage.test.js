@@ -146,4 +146,26 @@ describe('ExceptionDetailPage', () => {
     expect(wrapper.text()).toContain('Laravel —')
     expect(wrapper.text()).toContain('PHP —')
   })
+
+  it('shows a not-found state for a nonexistent exception key', async () => {
+    api.get.mockRejectedValue({ response: { status: 404 } })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/dashboard/:appId/exceptions/:key', name: 'exception-detail', component: ExceptionDetailPage },
+        { path: '/dashboard/:appId/issues/:id', name: 'issue-detail', component: { template: '<div />' } },
+      ],
+    })
+    await router.push(`/dashboard/app1/exceptions/${KEY}`)
+    await router.isReady()
+    const wrapper = mount(ExceptionDetailPage, {
+      global: {
+        plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h' } } })],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Exception not found')
+    expect(wrapper.findAll('a').find((a) => a.text() === 'View issue')).toBeUndefined()
+  })
 })

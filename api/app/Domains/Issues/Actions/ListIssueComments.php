@@ -25,6 +25,6 @@ class ListIssueComments
 
     public function handle(App $app, Issue $issue)
     {
-        return response()->json(IssueCommentResource::collection($issue->comments()->get()));
+        return IssueCommentResource::collection($issue->comments()->get());
     }
 }

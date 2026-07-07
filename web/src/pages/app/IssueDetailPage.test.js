@@ -112,4 +112,31 @@ describe('IssueDetailPage', () => {
     await flushPromises()
     expect(api.post).toHaveBeenCalledWith('/api/apps/app1/issues/5/assign', { assigned_to: 'teammate@example.test' })
   })
+
+  it('shows a not-found state for a nonexistent issue id, without fetching comments', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/comments')) return Promise.resolve({ data: { data: [] } })
+      return Promise.reject({ response: { status: 404 } })
+    })
+    api.post.mockResolvedValue({ data: {} })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/dashboard/:appId/issues/:id', component: { template: '<div />' } }],
+    })
+    await router.push('/dashboard/app1/issues/999999')
+    await router.isReady()
+    const wrapper = mount(IssueDetailPage, {
+      global: {
+        plugins: [router, createTestingPinia({
+          createSpy: vi.fn,
+          initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h' }, auth: { user: null, checked: true } },
+        })],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Issue not found')
+    expect(wrapper.findAll('button').find((b) => b.text() === 'Resolve')).toBeUndefined()
+    expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/comments'))
+  })
 })

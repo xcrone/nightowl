@@ -165,3 +165,41 @@ describe('AppShell — account menu (finding #12)', () => {
     expect(push).toHaveBeenCalledWith('/login')
   })
 })
+
+describe('AppShell — nonexistent app id', () => {
+  it('shows a not-found state instead of an empty dashboard shell', async () => {
+    api.get.mockImplementation((url) =>
+      url === '/api/apps'
+        ? Promise.resolve({ data: { org: appState.org, teams } })
+        : Promise.reject({ response: { status: 404 } }),
+    )
+    api.post.mockResolvedValue({})
+
+    const router = makeRouter()
+    router.push('/dashboard/does-not-exist')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [
+          router,
+          createTestingPinia({
+            createSpy: vi.fn,
+            stubActions: false,
+            initialState: {
+              app: { ...JSON.parse(JSON.stringify(appState)), current: null },
+              auth: { user: { email: 'z@x.c' }, checked: true },
+              theme: { mode: 'light', isDark: false },
+            },
+          }),
+        ],
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('App not found')
+    expect(wrapper.find('[data-testid="account-trigger"]').exists()).toBe(false)
+    const backLink = wrapper.findAll('a').find((a) => a.text().includes('Back to your apps'))
+    expect(backLink.attributes('href')).toBe('/')
+  })
+})

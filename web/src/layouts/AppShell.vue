@@ -74,12 +74,17 @@ function toggleLightDark() {
   theme.setMode(theme.isDark ? 'light' : 'dark')
 }
 
+const appNotFound = ref(false)
+
 async function loadApp(id) {
   if (!id) return
+  appNotFound.value = false
   if (!app.apps.length) {
     await app.fetchApps().catch(() => {})
   }
-  await app.setCurrentApp(id).catch(() => {})
+  await app.setCurrentApp(id).catch((e) => {
+    if (e?.response?.status === 404) appNotFound.value = true
+  })
 }
 
 watch(appId, (id) => loadApp(id), { immediate: true })
@@ -92,7 +97,17 @@ async function signOut() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+  <div
+    v-if="appNotFound"
+    class="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100"
+  >
+    <p class="text-lg font-semibold">App not found</p>
+    <p class="text-sm text-gray-500 dark:text-gray-400">It may have been deleted, or the link is incorrect.</p>
+    <RouterLink to="/" class="rounded bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700">
+      Back to your apps
+    </RouterLink>
+  </div>
+  <div v-else class="flex min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
     <!-- Sidebar -->
     <aside
       class="flex shrink-0 flex-col border-r border-gray-200 bg-white transition-all dark:border-gray-800 dark:bg-gray-900"
