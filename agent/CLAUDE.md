@@ -15,7 +15,7 @@ Laravel package installed in customer apps. Receives telemetry from `laravel/nig
 - Promise-based callbacks; recursive timer scheduling for adaptive intervals
 
 ### Process Management (Fork Safety)
-- `pcntl_fork()` spawns N drain workers (`NIGHTOWL_DRAIN_WORKERS`)
+- `pcntl_fork()` spawns N drain workers (`NIGHTOWL_DRAIN_WORKERS`), then `pcntl_exec()`s the child into `nightowl:drain-worker` (via an injected `drainSpawner`, falling back to in-process drain only if exec fails)
 - `pcntl_waitpid(WNOHANG)` non-blocking reaping; `SIGCHLD` restart
 - **Invariant**: Close SQLite PDO BEFORE fork, re-create AFTER (parent handle inheritance corrupts WAL on child exit)
 - **WAL pragma order**: `busy_timeout` MUST precede `journal_mode=WAL`
@@ -82,17 +82,20 @@ src/Agent/
   EmailTemplate.php      — Branded email rendering (fallback logo if FRONTEND_URL unset)
   Server.php             — Sync fallback (stream_select)
   ConnectionHandler.php  — Sync payload handler
+  PortInUseException.php — Thrown when TCP bind fails (e.g. port conflict with Nightwatch); caught in AgentCommand for a friendly CLI message
 src/Support/
   MultiIngest.php        — Nightwatch coexistence adapter (fan-out wrapper)
+  AgentInstanceId.php    — Builds `hostname:pid` instance identifier (capped to 191 chars for the API column)
   QueryHistogram.php     — Frozen √2-spaced duration bin edges + bin assignment for rollups; MUST stay byte-identical to nightowl-api's App\Support\QueryHistogram (checksum-guarded both sides)
   RollupSpec.php / RollupSpecs.php — Declarative per-type rollup config (group cols, counters w/ PHP predicate + SQL condition, representatives, duration/histogram flags) driving RecordWriter::writeRollup + BackfillRollupsCommand. One spec each for queries/requests/jobs/outgoing/cache.
 src/Commands/
   AgentCommand.php        — nightowl:agent [--driver=async|sync]; warns at startup if the nightowl-DB migration history is behind (MigrateCommand::isBehind), skipped under run_migrations ride-along
   MigrateCommand.php      — nightowl:migrate: migrate --database=nightowl (history in nightowl DB) + baseline adoption; pure helpers migrationsToBaseline/pendingMigrations/isBehind
   InstallCommand.php      — nightowl:install
-  PruneCommand.php        — nightowl:prune (retention cleanup; raw + separate longer rollup retention)
+  PruneCommand.php        — nightowl:prune (retention cleanup; raw + separate longer rollup retention; `--hours=` overrides `--days` for sub-day retention cadences)
   BackfillRollupsCommand.php — nightowl:backfill-rollups (replace-per-bucket backfill of nightowl_query_rollups)
   ClearCommand.php        — nightowl:clear (truncate all tables)
+  DrainWorkerCommand.php  — nightowl:drain-worker (internal; the child process AsyncServer's fork+`pcntl_exec()`s into after forking)
 ```
 
 ## Artisan Commands
@@ -102,18 +105,20 @@ src/Commands/
 | `nightowl:agent [--driver=async\|sync]` | Start agent (TCP + UDP + Health API) |
 | `nightowl:install` | Publish config, create/update schema (via `nightowl:migrate`), fork-safety probe |
 | `nightowl:migrate` | Idempotent schema sync — `migrate --database=nightowl` (history in the nightowl DB) + baseline adoption of an already-present schema. Run on each deploy. |
-| `nightowl:prune` | Delete telemetry older than retention (14d default); query rollups pruned separately (90d default) |
+| `nightowl:prune` | Delete telemetry older than retention (14d default; `--hours=` overrides for sub-day cadences); query rollups pruned separately (90d default) |
 | `nightowl:backfill-rollups` | Backfill every `nightowl_*_rollups` table from raw telemetry (chunked, throttled, idempotent; skips the trailing 10min so it never races live drain; `--type=` restricts to one table) |
 | `nightowl:clear` | Truncate all NightOwl tables |
+| `nightowl:drain-worker` | Internal — the process a forked drain worker `pcntl_exec()`s into (not invoked directly) |
 
 ## Database
 
-57 migrations, 22 tables (12 telemetry + 3 issues + alert_channels/settings + 5 rollups). The second-to-last migration adds a nullable, indexed `app_id` string to every telemetry/issue/rollup table so the dashboard can scope a single shared Postgres to multiple apps (see api/'s per-app routes); the agent runtime doesn't stamp it — it's backfilled/seeded on the dashboard side. The last migration adds the same `app_id` column to `nightowl_settings`/`nightowl_alert_channels`, which the earlier migration missed.
+57 migrations, 23 tables (12 telemetry + 1 reports + 3 issues + alert_channels/settings + 5 rollups). The second-to-last migration adds a nullable, indexed `app_id` string to every telemetry/issue/rollup table so the dashboard can scope a single shared Postgres to multiple apps (see api/'s per-app routes); the agent runtime doesn't stamp it — it's backfilled/seeded on the dashboard side. The last migration adds the same `app_id` column to `nightowl_settings`/`nightowl_alert_channels`, which the earlier migration missed.
 
 - **Telemetry**: requests, queries, exceptions, commands, jobs, cache_events, mail, notifications, outgoing_requests, scheduled_tasks, logs, users
 - **Rollups**: query_rollups, request_rollups, job_rollups, outgoing_request_rollups, cache_rollups — pre-aggregated per-minute summaries maintained at drain time. Driven by a declarative `RollupSpec` per type (`src/Support/RollupSpecs.php`) consumed by the generic `RecordWriter::writeRollup`, `nightowl:backfill-rollups`, and `PruneCommand`. Duration-bearing types carry √2-spaced `hist_NN` histogram bins for approximate windowed percentiles (`src/Support/QueryHistogram.php`); cache groups by `(key, store)` with no histogram. Queries keeps a bespoke drain path (`writeQueryRollups`) but shares the generic backfill/prune. See `specs/query_rollups.md`.
 - **Issues**: issues (fingerprint upsert, subtype: exception/performance/health, threshold_metrics, deploy), issue_activity (with `actor_type`/`actor_meta` for MCP), issue_comments (with actor columns)
 - **Alerts**: alert_channels, settings
+- **Reports**: reports (`period_start`/`period_end`/`payload` JSON snapshot; schema only — agent doesn't write it, report generation lives in the API for Agency-plan white-label reports)
 - **Search**: `pg_trgm` extension + a GIN trigram index per identifier-like column (URLs, SQL text, class names, cache keys, ...) across 11 telemetry/issue tables, for substring `ILIKE '%...%'` matching. Prose columns (`nightowl_logs.message`+`context`+`extra`, `nightowl_exceptions.message`, `nightowl_issues.exception_message`+`description`) instead get a `search_vector` `tsvector` **generated column** (`STORED`, via a custom `nightowl_immutable_to_tsvector()` SQL function — Postgres's built-in `to_tsvector(regconfig, text)` is `STABLE`, not `IMMUTABLE`, so it can't back a generated column directly) plus its own GIN index, for word-stemmed matching. Consumed by `api/`'s `App\Support\TelemetryQuery::applySearch()` (called from `App\Actions\Telemetry\*`) via `config/telemetry.php`'s per-resource `search` key — the agent only owns the schema, not the query logic.
 
 **DB connection name**: `nightowl` (registered by service provider).
@@ -142,11 +147,11 @@ src/Commands/
 
 | Suite | Count | Dependencies | Focus |
 |-------|-------|--------------|-------|
-| **Unit** | ~110 | None | PayloadParser, MetricsCollector, ConnectionHandler, AlertNotifier, DrainWorker |
-| **Integration** | ~80 | SQLite always, PG skips if unavailable | SqliteBuffer (multi-worker claiming, WAL), RecordWriter (COPY/upsert/users_count), SimulatorPayload, EndToEnd |
-| **System** | ~30 | PG + pcntl + posix | Real AsyncServer + fork + drain over TCP; thresholds, back-pressure, multi-worker, error storms, scaling |
+| **Unit** | ~176 | None | PayloadParser, MetricsCollector, ConnectionHandler, AlertNotifier, DrainWorker |
+| **Integration** | ~111 | SQLite always, PG skips if unavailable | SqliteBuffer (multi-worker claiming, WAL), RecordWriter (COPY/upsert/users_count), SimulatorPayload, EndToEnd |
+| **System** | ~29 | PG + pcntl + posix | Real AsyncServer + fork + drain over TCP; thresholds, back-pressure, multi-worker, error storms, scaling |
 
-**Total**: 233 test methods.
+**Total**: ~316 test methods.
 
 ### Running Tests
 - `vendor/bin/phpunit --testsuite Unit`
@@ -178,6 +183,8 @@ NIGHTOWL_DRAIN_INTERVAL_MS=100           # Drain loop idle interval
 NIGHTOWL_MAX_PENDING_ROWS=100000         # Back-pressure threshold
 NIGHTOWL_MAX_BUFFER_MEMORY=268435456     # 256MB RSS limit
 NIGHTOWL_REOPEN_COOLDOWN_HOURS=0         # Hours to wait before flipping resolved → open on recurrence (0 = always reopen, Sentry-style)
+NIGHTOWL_ROLLUP_RETENTION_DAYS=90        # Retention window for nightowl_*_rollups tables (nightowl:prune)
+NIGHTOWL_DRAIN_QUARANTINE=false          # Bisect+dead-letter row-level PG errors (SQLSTATE class 22/23) instead of dropping the batch; surfaces as DRAIN_QUARANTINE diagnosis
 ```
 
 ### Auto-reopen on recurrence
@@ -194,7 +201,7 @@ Every telemetry row carries both:
 
 ## composer.json
 - **Package**: `nightowl/agent`, PHP `^8.2`
-- **Hard requires**: `laravel/framework ^11|^12`, `laravel/nightwatch ^1.26`, `react/{socket,datagram,event-loop}` — `react/http` intentionally excluded (its `psr/http-message ^1.0` pin conflicts with modern Laravel packages)
+- **Hard requires**: `laravel/framework ^11|^12|^13`, `laravel/nightwatch ^1.26`, `react/{socket,datagram,event-loop}` — `react/http` intentionally excluded (its `psr/http-message ^1.0` pin conflicts with modern Laravel packages)
 - **PHP extensions**: `pdo_pgsql`, `pdo_sqlite`
 
 ## Development

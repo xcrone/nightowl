@@ -5,27 +5,32 @@ Org → Teams → Apps dashboard architecture, multi-app scoping via `app_id`).
 
 ## Current architecture
 
-- `app/Http/Controllers/` no longer holds any API entrypoints — every former
-  controller (`TelemetryController`, `AggregateController`, `RollupController`,
+- `app/Http/` has been removed entirely — every former controller
+  (`TelemetryController`, `AggregateController`, `RollupController`,
   `TimeseriesController`, `AgentHealthController`, `OrgController`, `AppController`,
   `DashboardController`, `AppSettingController`, `AlertChannelController`,
   `IssueActionController`, `AuthController`, `NightowlUserController`,
   `UserDetailController`, `DataManagementController`) has been ported to a
-  `lorisleiva/laravel-actions` Action. `app/Http/Controllers/Api/` was deleted once
-  empty.
-- `app/Domains/{DataManagement,Auth,Users,Apps,Settings,Issues}/` — DDD bounded-context
+  `lorisleiva/laravel-actions` Action, and `app/Http/Controllers/` (including
+  `Controllers/Api/`) was deleted once empty. `app/` now holds only
+  `Actions/`, `Domains/`, `Models/`, `Providers/`, `Support/`.
+- `app/Domains/{Apps,Auth,DataManagement,Issues,Settings,Users}/` — DDD bounded-context
   modules. Every HTTP entrypoint is an Action (`authorize() → rules() → handle()`),
   routed from the module's own `Routes/api.php`, returning API Resources (never raw
   models). See the `api-domain-dev` skill for the folder shape and each domain's
   `README.md` for its endpoints/business logic.
-- `app/Actions/{Telemetry,Aggregates,Rollups,Timeseries,Health}/` — 5 cross-cutting,
-  config-driven engines, deliberately **not** a Domain (no distinct business rules, no
-  api-owned schema — all `nightowl_*` tables belong to `agent/`). They serve every
-  telemetry/aggregate resource off two registries: `config/telemetry.php` (raw
-  lists/detail/related) and `config/aggregates.php` (per-key aggregated lists, computed
-  on the fly with GROUP BY + Postgres `percentile_cont`). Period windows resolve
-  through `App\Support\Period`. Extending either registry for a new resource type is
-  still the sanctioned path — that alone is not a reason to create a new Domain.
+- `app/Actions/{Telemetry,Aggregates,Rollups,Timeseries,Health,Exceptions}/` — 6
+  cross-cutting, config-driven engines, deliberately **not** a Domain (no distinct
+  business rules, no api-owned schema — all `nightowl_*` tables belong to `agent/`).
+  Telemetry/Aggregates/Rollups/Timeseries/Health serve every telemetry/aggregate
+  resource off two registries: `config/telemetry.php` (raw lists/detail/related) and
+  `config/aggregates.php` (per-key aggregated lists, computed on the fly with GROUP BY
+  + Postgres `percentile_cont`). `Exceptions` (`ShowExceptionGroup`) is the row-level
+  drill-down for the exceptions list — structurally similar but a sibling of the
+  Aggregates family, not part of either registry. Period windows resolve through
+  `App\Support\Period`. Extending the telemetry/aggregates registries for a new
+  resource type is still the sanctioned path — that alone is not a reason to create a
+  new Domain.
 - `app/Models/Telemetry/` — Eloquent models for the `nightowl_*` tables (owned by
   `nightowl/agent`'s migrations, consumed here via `App\Models\App::scopeForApp`).
   Models were not relocated into `app/Domains/`/`app/Actions/` folders — several are
