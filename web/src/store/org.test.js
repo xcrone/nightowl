@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 vi.mock('../services/api', () => ({
   default: { get: vi.fn(), post: vi.fn() },
 }))
+import api from '../services/api'
 import { useOrgStore } from './org'
 
 const CURRENT_ORG_KEY = 'nightowl:currentOrgUuid'
@@ -30,5 +31,25 @@ describe('reset', () => {
     expect(org.teams).toEqual([])
     expect(org.currentOrgUuid).toBeNull()
     expect(localStorage.getItem(CURRENT_ORG_KEY)).toBeNull()
+  })
+})
+
+describe('createOrg', () => {
+  it('posts the new org, appends it to orgs, and switches to it', async () => {
+    const newOrg = { uuid: 'org-new-uuid', name: 'New Org', account_email: 'new@example.com' }
+    api.post.mockResolvedValue({ data: newOrg })
+    api.get.mockImplementation((url) => {
+      if (url === '/api/apps') return Promise.resolve({ data: { org: newOrg, teams: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    const org = useOrgStore()
+
+    const result = await org.createOrg({ name: newOrg.name, account_email: newOrg.account_email })
+
+    expect(api.post).toHaveBeenCalledWith('/api/orgs', { name: newOrg.name, account_email: newOrg.account_email })
+    expect(org.orgs).toContainEqual(newOrg)
+    expect(org.currentOrgUuid).toBe(newOrg.uuid)
+    expect(localStorage.getItem(CURRENT_ORG_KEY)).toBe(newOrg.uuid)
+    expect(result).toEqual(newOrg)
   })
 })

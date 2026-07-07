@@ -12,9 +12,15 @@ import StatPanel from '../components/StatPanel.vue'
 const org = useOrgStore()
 const router = useRouter()
 
+const ui = reactive({ loading: true })
+
 onMounted(async () => {
-  if (!org.org) await org.fetchOrg().catch(() => {})
-  fetchMembers().catch(() => {})
+  try {
+    if (!org.org) await org.fetchOrg().catch(() => {})
+    await fetchMembers().catch(() => {})
+  } finally {
+    ui.loading = false
+  }
 })
 
 function backToDashboard() {
@@ -130,6 +136,22 @@ async function removeMember(member) {
         </button>
       </div>
 
+      <!-- No-org empty state -->
+      <div
+        v-if="!ui.loading && !org.org"
+        class="rounded-xl border-2 border-dashed border-gray-300 p-8 text-center dark:border-gray-700"
+      >
+        <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">You don't have an organization yet.</p>
+        <router-link
+          to="/"
+          data-test="no-org-back-link"
+          class="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
+        >
+          Go back to create one
+        </router-link>
+      </div>
+
+      <template v-else-if="!ui.loading && org.org">
       <!-- Org details -->
       <StatPanel title="Organization details">
         <template #actions>
@@ -230,6 +252,7 @@ async function removeMember(member) {
           </button>
         </div>
       </StatPanel>
+      </template>
     </div>
   </div>
 </template>

@@ -10,6 +10,7 @@ vi.mock('../services/api', () => ({
 import api from '../services/api'
 import OrgDashboard from './OrgDashboard.vue'
 import { useAuthStore } from '../store/auth'
+import { useOrgStore } from '../store/org'
 
 const org = { uuid: 'org-uuid-1', name: 'Owlworks', account_email: 'owlworks@example.com' }
 
@@ -263,5 +264,123 @@ describe('OrgDashboard', () => {
     expect(wrapper.text()).toContain('Other Team')
     expect(wrapper.text()).not.toContain('Delta Payments')
     expect(localStorage.getItem('nightowl:currentOrgUuid')).toBe(otherOrg.uuid)
+  })
+
+  describe('zero-org state', () => {
+    const zeroOrgMocks = { orgsList: [], appsResponse: { data: { org: null, teams: [] } } }
+
+    it('shows a Create organization prompt instead of the normal toolbar/team view when the user has no organization', async () => {
+      const { wrapper } = await mountPage(zeroOrgMocks)
+
+      expect(wrapper.find('[data-test="create-org"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="add-team"]').exists()).toBe(false)
+    })
+
+    it('creates an organization from the prompt and shows the resulting dashboard', async () => {
+      const { wrapper } = await mountPage(zeroOrgMocks)
+
+      await wrapper.find('[data-test="create-org"]').trigger('click')
+      await wrapper.find('[data-test="create-org-modal-name"]').setValue('New Org')
+      await wrapper.find('[data-test="create-org-modal-email"]').setValue('new-org@example.com')
+
+      const newOrg = { uuid: 'org-uuid-new', name: 'New Org', account_email: 'new-org@example.com' }
+      api.get.mockImplementation((url) => {
+        if (url === '/api/apps') return Promise.resolve({ data: { org: newOrg, teams: [] } })
+        return Promise.reject(new Error(`unexpected GET ${url}`))
+      })
+      api.post.mockResolvedValue({ data: newOrg })
+
+      await wrapper.find('[data-test="create-org-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(api.post).toHaveBeenCalledWith('/api/orgs', { name: 'New Org', account_email: 'new-org@example.com' })
+      expect(wrapper.find('[data-test="create-org-modal-name"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="add-team"]').exists()).toBe(true)
+    })
+
+    it('shows an inline error and does not close the modal when creating an organization fails', async () => {
+      const { wrapper } = await mountPage(zeroOrgMocks)
+
+      await wrapper.find('[data-test="create-org"]').trigger('click')
+      await wrapper.find('[data-test="create-org-modal-name"]').setValue('New Org')
+      await wrapper.find('[data-test="create-org-modal-email"]').setValue('new-org@example.com')
+
+      api.post.mockRejectedValue({ response: { data: { message: 'Something went wrong.' } } })
+
+      await wrapper.find('[data-test="create-org-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Something went wrong.')
+      expect(wrapper.find('[data-test="create-org-modal-name"]').exists()).toBe(true)
+    })
+
+    it('shows a validation error and does not call the API when submitting the Create organization form with blank fields', async () => {
+      const { wrapper } = await mountPage(zeroOrgMocks)
+
+      await wrapper.find('[data-test="create-org"]').trigger('click')
+      await wrapper.find('[data-test="create-org-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="create-org-modal-name"]').exists()).toBe(true)
+      expect(api.post).not.toHaveBeenCalled()
+    })
+  })
+
+  // NOTE on sequencing: per the zero-org-state contract above, the whole
+  // toolbar + team/app view (including each team's own error banner) is
+  // hidden whenever `!org.org`. Vue batches reactive updates into a single
+  // render, so a test can never observe "team view hidden" and "team-scoped
+  // error text visible" in the same paint once org.org is null — they are
+  // mutually exclusive on screen. To still exercise each guard, org.org is
+  // nulled *synchronously, without an intervening await/tick*, immediately
+  // before the guarded click — so the still-mounted (not yet re-rendered)
+  // button is clicked while its handler already reads the new org.org===null
+  // value. This reliably proves the guard fires (no API call) without
+  // relying on a DOM state that can't exist. Where the resulting error text
+  // lives somewhere NOT hidden by the empty-state switch (the Add-team
+  // modal, which is structurally independent of it), the visible-error
+  // assertion is also included.
+  describe('no-org-context defensive guards', () => {
+    it('shows an error instead of silently doing nothing when Add team is submitted with no org context', async () => {
+      const { wrapper } = await mountPage()
+      const org = useOrgStore()
+
+      await wrapper.find('[data-test="add-team"]').trigger('click')
+      await wrapper.find('[data-test="team-modal-name"]').setValue('New Team')
+
+      org.org = null
+      await wrapper.find('[data-test="team-modal-submit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('No organization selected.')
+      expect(api.post).not.toHaveBeenCalled()
+    })
+
+    it('does not call the API (sets an internal error instead of a silent no-op) when renaming a team with no org context', async () => {
+      const { wrapper } = await mountPage()
+      const org = useOrgStore()
+
+      const renameButton = wrapper.findAll('button').find((b) => b.text() === 'Rename')
+      await renameButton.trigger('click')
+      const saveButton = wrapper.findAll('button').find((b) => b.text() === 'Save')
+
+      org.org = null
+      await saveButton.trigger('click')
+
+      expect(api.put).not.toHaveBeenCalled()
+    })
+
+    it('does not call the API (sets an internal error instead of a silent no-op) when deleting a team with no org context', async () => {
+      vi.stubGlobal('confirm', vi.fn(() => true))
+      const { wrapper } = await mountPage()
+      const org = useOrgStore()
+      const deleteButton = wrapper.find('[data-test="delete-team"]')
+
+      org.org = null
+      await deleteButton.trigger('click')
+
+      expect(api.delete).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
   })
 })

@@ -10,8 +10,8 @@ use Tests\TestCase;
 /**
  * GET /api/orgs (App\Domains\Apps\Actions\ListOrgs). Had zero test
  * coverage before this migration — covers both the normal case (user has
- * org membership) and the dev/demo fallback (falls back to every org when
- * membership wasn't seeded for the user).
+ * org membership) and the no-membership case, which must return an empty
+ * list rather than leaking other users' orgs.
  */
 class OrgApiTest extends TestCase
 {
@@ -36,7 +36,7 @@ class OrgApiTest extends TestCase
         $this->assertSame('mine@example.com', $data[0]['account_email']);
     }
 
-    public function test_falls_back_to_every_org_when_the_user_has_no_membership(): void
+    public function test_returns_an_empty_list_when_the_user_has_no_membership(): void
     {
         $user = User::factory()->create();
 
@@ -47,10 +47,6 @@ class OrgApiTest extends TestCase
 
         $response->assertOk();
         $data = $response->json('data');
-        $this->assertCount(2, $data);
-        $this->assertEqualsCanonicalizing(
-            [$orgA->uuid, $orgB->uuid],
-            array_column($data, 'uuid')
-        );
+        $this->assertCount(0, $data);
     }
 }

@@ -54,8 +54,8 @@ two columns mean in practice and their known scope limits.
 
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
-| `ListOrgs` | Orgs the authenticated user belongs to (`$request->user()->orgs()`); falls back to every `Org` if the user has no membership (demo/dev convenience so the dashboard is never empty). | `authorize()` always allows. This endpoint had **zero test coverage** before this migration; `tests/Feature/Apps/OrgApiTest.php` now covers both branches. |
-| `ListApps` | The selected `Org`'s teams, each with its apps and a live 1h `health()` summary (error rate, 5xx count, exceptions, open issues, connected/disconnected) — drives the Org Dashboard cards + the org switcher. | `authorize()` always allows. `?org=<uuid>` (the org switcher) resolves via `$request->user()->orgs()->where('orgs.uuid', ...)->firstOrFail()` — 404s if the user isn't a member of that org, never leaking another org's data. Without the query param: `$request->user()->orgs()->first()`, falling back to `Org::query()->firstOrFail()` only if the user has no membership at all (same dev/demo convenience as `ListOrgs`). |
+| `ListOrgs` | Orgs the authenticated user belongs to (`$request->user()->orgs()`); a user with no membership at all gets their own true empty list — never another user's orgs. | `authorize()` always allows. This endpoint had **zero test coverage** before this migration; `tests/Feature/Apps/OrgApiTest.php` now covers both the "has membership" and "no membership → empty list" branches. |
+| `ListApps` | The selected `Org`'s teams, each with its apps and a live 1h `health()` summary (error rate, 5xx count, exceptions, open issues, connected/disconnected) — drives the Org Dashboard cards + the org switcher. | `authorize()` always allows. `?org=<uuid>` (the org switcher) resolves via `$request->user()->orgs()->where('orgs.uuid', ...)->firstOrFail()` — 404s if the user isn't a member of that org, never leaking another org's data. Without the query param: `$request->user()->orgs()->first()`. If that's null (the user has no org membership at all), returns a clean `{org: null, teams: []}` (HTTP 200) instead of falling back to any other org — see the Notes entry below for why this replaced the old "fall back to the first org in the table" dev convenience. |
 | `ShowApp` | One `App` (via `AppResource`) + its `team`/`org`, `loadMissing('team.org')`. | `authorize()` always allows. Route-bound `{app}` (opaque `app_id`) — 404s automatically if unknown. |
 | `ShowDashboard` | App Dashboard summary: request volume/latency/status mix, exception counts, job throughput, most-active/most-impacted users — all via three Postgres-specific raw-SQL aggregate queries (`percentile_cont`, `::bigint` casts), preserved exactly from the pre-migration controller (not made portable). Period-aware (`Period::resolve()`). | `authorize()` always allows. No rules — route-bound `{app}`, period resolved from the query string. |
 | `StoreOrg` | Founds a new `Org`, attaches the creator as its first member. | `authorize()` always allows (any authenticated user may found an org). `rules()`: `name` required, `account_email` required email. |
@@ -229,13 +229,30 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
   by `Register`) was shown/scoped to whichever `Org` happened to be first in
   the table instead of their own — invisible teams/apps on the dashboard,
   and every `Organization` page mutation 403ing since they weren't a member
-  of that other `Org`. Fixed to `$request->user()->orgs()->first() ??
-  Org::query()->firstOrFail()`, mirroring `ListOrgs`'s existing membership
-  lookup + no-membership fallback. `ListApps`'s non-app-scoped nature (it
+  of that other `Org`. First fixed to `$request->user()->orgs()->first() ??
+  Org::query()->firstOrFail()`, mirroring `ListOrgs`'s membership lookup +
+  no-membership fallback at the time. `ListApps`'s non-app-scoped nature (it
   still only supports one `Org` per user, not a picker across several) is a
   separate, remaining limitation — see the `StoreOrg`/`AddOrgMember` note
   above for why a second `Org` still isn't reachable from the UI.
   New test: `AppApiTest::test_apps_endpoint_returns_the_current_users_own_org_not_the_first_one_in_the_table`.
+- **Cross-tenant leak fix (post-CRUD-batch):** the `Org::query()->firstOrFail()`/
+  "fall back to every org" no-membership fallbacks described in the two notes
+  above (`ListApps` and `ListOrgs`) were themselves a data leak, not just a
+  demo convenience — a user with zero org memberships (e.g. freshly
+  registered, membership row not yet seeded, or removed from their only org)
+  could see another user's private org, teams, and apps instead of a clean
+  empty state, and in `ListApps`'s case could also 404 confusingly on an
+  empty table. Both fallbacks were removed: `ListOrgs` now simply returns
+  `$request->user()->orgs()->...->get()`, which may legitimately be an empty
+  collection; `ListApps` now returns `response()->json(['org' => null, 'teams'
+  => []])` (HTTP 200) when `$requestedOrg ?? $request->user()->orgs()->first()`
+  is null, instead of ever substituting a different org. The `?org=<uuid>`
+  query-param branch (member-of-a-known-org 404, unknown-uuid self-heal) and
+  the "user has exactly one org" happy path are unaffected. New/updated
+  tests: `OrgApiTest::test_returns_an_empty_list_when_the_user_has_no_membership`,
+  `AppApiTest::test_apps_endpoint_returns_an_empty_org_when_the_user_has_no_membership`,
+  `AppApiTest::test_apps_endpoint_does_not_leak_another_users_org_when_the_acting_user_has_no_membership`.
 - Relocated tests (Batch 4 of the controllers → Actions migration):
   `tests/Feature/Apps/AppScopingTest.php`'s `test_apps_endpoint_returns_teams_and_apps`
   / `test_app_show_returns_the_app` / `test_unknown_app_is_not_found` now

@@ -20,11 +20,11 @@ const org = useOrgStore()
 const auth = useAuthStore()
 const router = useRouter()
 
-const ui = reactive({ search: '', view: 'teams' })
+const ui = reactive({ search: '', view: 'teams', loading: true })
 
 onMounted(async () => {
-  org.fetchOrgs().catch(() => {})
-  org.fetchOrg().catch(() => {})
+  await Promise.allSettled([org.fetchOrgs(), org.fetchOrg()])
+  ui.loading = false
 })
 
 async function onSwitchOrg(event) {
@@ -109,6 +109,10 @@ function cancelEditTeam(team) {
 
 async function saveTeam(team) {
   const uiState = teamUi[team.uuid]
+  if (!org.org?.uuid) {
+    uiState.deleteError = 'No organization selected.'
+    return
+  }
   if (!uiState.name.trim()) return
   uiState.saving = true
   try {
@@ -125,6 +129,10 @@ async function saveTeam(team) {
 async function deleteTeam(team) {
   const uiState = teamUi[team.uuid]
   uiState.deleteError = ''
+  if (!org.org?.uuid) {
+    uiState.deleteError = 'No organization selected.'
+    return
+  }
   if (!window.confirm(`Delete team "${team.name}"? This cannot be undone.`)) return
   try {
     await api.delete(`/api/orgs/${org.org.uuid}/teams/${team.uuid}`)
@@ -144,7 +152,10 @@ function openAddTeamModal() {
 }
 
 async function submitAddTeam() {
-  if (!org.org?.uuid) return
+  if (!org.org?.uuid) {
+    teamModal.error = 'No organization selected.'
+    return
+  }
   if (!teamModal.name.trim()) {
     teamModal.error = 'Team name is required.'
     return
@@ -159,6 +170,37 @@ async function submitAddTeam() {
     teamModal.error = e?.response?.data?.message ?? 'Could not add team.'
   } finally {
     teamModal.saving = false
+  }
+}
+
+// --- Create organization modal (zero-org empty state) ---------------------
+const createOrgModal = reactive({ open: false, name: '', account_email: '', error: '', saving: false })
+
+function openCreateOrgModal() {
+  createOrgModal.open = true
+  createOrgModal.name = ''
+  createOrgModal.account_email = ''
+  createOrgModal.error = ''
+}
+
+async function submitCreateOrg() {
+  if (!createOrgModal.name.trim()) {
+    createOrgModal.error = 'Name is required.'
+    return
+  }
+  if (!createOrgModal.account_email.trim()) {
+    createOrgModal.error = 'Account email is required.'
+    return
+  }
+  createOrgModal.saving = true
+  createOrgModal.error = ''
+  try {
+    await org.createOrg({ name: createOrgModal.name.trim(), account_email: createOrgModal.account_email.trim() })
+    createOrgModal.open = false
+  } catch (e) {
+    createOrgModal.error = e?.response?.data?.message ?? 'Could not create organization.'
+  } finally {
+    createOrgModal.saving = false
   }
 }
 
@@ -239,7 +281,7 @@ async function deleteApp(team, appItem) {
       </div>
 
       <!-- Toolbar -->
-      <div class="flex flex-wrap items-center gap-3">
+      <div v-if="!ui.loading && org.org" class="flex flex-wrap items-center gap-3">
         <input
           v-model="ui.search"
           type="text"
@@ -273,7 +315,7 @@ async function deleteApp(team, appItem) {
       </div>
 
       <!-- Teams view -->
-      <div v-if="ui.view === 'teams'" class="space-y-8">
+      <div v-if="!ui.loading && org.org && ui.view === 'teams'" class="space-y-8">
         <section v-for="team in filteredTeams" :key="team.id">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div v-if="!teamUi[team.uuid]?.editing" class="flex items-center gap-2">
@@ -414,7 +456,7 @@ async function deleteApp(team, appItem) {
       </div>
 
       <!-- Apps (flat) view -->
-      <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-else-if="!ui.loading && org.org" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <button
           v-for="appItem in flatApps"
           :key="appItem.app_id"
@@ -448,6 +490,24 @@ async function deleteApp(team, appItem) {
         <p v-if="!flatApps.length" class="text-sm text-gray-500 dark:text-gray-400">
           {{ hasSearch ? 'No apps match your search.' : "You don't have any apps yet." }}
         </p>
+      </div>
+
+      <!-- Zero-org empty state -->
+      <div
+        v-if="!ui.loading && !org.org"
+        class="rounded-xl border-2 border-dashed border-gray-300 p-8 text-center dark:border-gray-700"
+      >
+        <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          You don't have an organization yet. Create one to start adding teams and apps.
+        </p>
+        <button
+          type="button"
+          data-test="create-org"
+          class="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+          @click="openCreateOrgModal"
+        >
+          Create organization
+        </button>
       </div>
     </div>
 
@@ -489,5 +549,49 @@ async function deleteApp(team, appItem) {
 
     <!-- Add/edit app modal -->
     <AppFormModal ref="appFormModal" @saved="onAppSaved" />
+
+    <!-- Create organization modal -->
+    <Modal v-if="createOrgModal.open" title="Create organization" @close="createOrgModal.open = false">
+      <div class="space-y-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Name</label>
+          <input
+            v-model="createOrgModal.name"
+            type="text"
+            data-test="create-org-modal-name"
+            autofocus
+            class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Account email</label>
+          <input
+            v-model="createOrgModal.account_email"
+            type="email"
+            data-test="create-org-modal-email"
+            class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          />
+        </div>
+        <p v-if="createOrgModal.error" class="text-xs text-red-600 dark:text-red-400">{{ createOrgModal.error }}</p>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+            @click="createOrgModal.open = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-test="create-org-modal-submit"
+            class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            :disabled="createOrgModal.saving"
+            @click="submitCreateOrg"
+          >
+            {{ createOrgModal.saving ? 'Creating…' : 'Create organization' }}
+          </button>
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>

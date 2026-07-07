@@ -103,4 +103,14 @@ describe('OrganizationPage', () => {
     await wrapper.find('[data-test="back-to-dashboard"]').trigger('click')
     expect(push).toHaveBeenCalledWith('/')
   })
+
+  it("shows a 'no organization yet' message and a link back to the dashboard instead of the org/members forms when the user has no organization", async () => {
+    const { wrapper } = await mountPage({ existingOrg: null })
+
+    const backLink = wrapper.find('[data-test="no-org-back-link"]')
+    expect(backLink.exists()).toBe(true)
+    expect(backLink.attributes('href')).toBe('/')
+    expect(wrapper.text()).not.toContain('Name:')
+    expect(wrapper.find('[data-test="edit-org"]').exists()).toBe(false)
+  })
 })

@@ -21,6 +21,15 @@ export const useOrgStore = defineStore('org', {
       this.orgs = data.data ?? []
     },
 
+    // Creates a brand-new org (used by the zero-org empty-state prompt) and
+    // immediately switches the dashboard over to it.
+    async createOrg({ name, account_email }) {
+      const { data } = await api.post('/api/orgs', { name, account_email })
+      this.orgs.push(data)
+      await this.switchOrg(data.uuid)
+      return data
+    },
+
     async fetchOrg() {
       const apps = await api.get('/api/apps', {
         params: this.currentOrgUuid ? { org: this.currentOrgUuid } : {},

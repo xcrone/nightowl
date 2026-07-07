@@ -15,7 +15,9 @@ use Lorisleiva\Actions\Concerns\AsAction;
 
 /**
  * GET /api/apps — apps grouped by team, each with a live 1h health summary
- * — drives the Org Dashboard cards (docs/pages/org-dashboard.md).
+ * — drives the Org Dashboard cards (docs/pages/org-dashboard.md). A user
+ * with no org membership at all gets their own true empty state
+ * (`{org: null, teams: []}`) — never another user's org data.
  */
 class ListApps
 {
@@ -43,9 +45,10 @@ class ListApps
         //    exactly like the no-param branch below instead of 404ing: the
         //    store already re-syncs currentOrgUuid to whatever org actually
         //    comes back, so this self-heals on the next request.
-        // Falls back to the first Org in the table only if the user has no
-        // membership at all (demo/dev convenience so the dashboard is never
-        // empty), matching ListOrgs's fallback.
+        // If the user has no org membership at all, there is no org to fall
+        // back to: return a clean empty state (`org: null, teams: []`)
+        // rather than substituting a random/first org from the table, which
+        // would leak another user's private org data.
         // Previously this always returned Org::query()->firstOrFail()
         // regardless of who was asking, which meant a newly registered user
         // (attached to their own, separate Org) was shown/scoped to
@@ -61,7 +64,11 @@ class ListApps
             }
         }
 
-        $org = $requestedOrg ?? $request->user()->orgs()->first() ?? Org::query()->firstOrFail();
+        $org = $requestedOrg ?? $request->user()->orgs()->first();
+
+        if (! $org) {
+            return response()->json(['org' => null, 'teams' => []]);
+        }
 
         $teams = $org->teams()->with('apps')->get()->map(function ($team) {
             // apps_count/apps are computed extras, not raw Team fields, so

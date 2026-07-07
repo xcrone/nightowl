@@ -35,7 +35,7 @@ class AppApiTest extends TestCase
     public function test_apps_endpoint_returns_teams_and_apps(): void
     {
         $user = User::factory()->create();
-        $app = $this->seedApp();
+        $app = $this->seedApp(user: $user);
 
         $this->actingAs($user)
             ->getJson('/api/apps')
@@ -150,7 +150,7 @@ class AppApiTest extends TestCase
     public function test_health_error_rate_counts_only_5xx_not_4xx(): void
     {
         $user = User::factory()->create();
-        $app = $this->seedApp();
+        $app = $this->seedApp(user: $user);
 
         RequestRecord::factory()->count(6)->create(['app_id' => $app->app_id, 'status_code' => 200]);
         RequestRecord::factory()->count(3)->create(['app_id' => $app->app_id, 'status_code' => 404]);
@@ -175,7 +175,7 @@ class AppApiTest extends TestCase
     public function test_health_error_rate_is_zero_for_a_single_stray_4xx_request(): void
     {
         $user = User::factory()->create();
-        $app = $this->seedApp();
+        $app = $this->seedApp(user: $user);
 
         RequestRecord::factory()->create(['app_id' => $app->app_id, 'status_code' => 404]);
 
@@ -186,5 +186,32 @@ class AppApiTest extends TestCase
             ->assertJsonPath('teams.0.apps.0.count_4xx', 1)
             ->assertJsonPath('teams.0.apps.0.count_5xx', 0)
             ->assertJsonPath('teams.0.apps.0.error_rate', 0);
+    }
+
+    public function test_apps_endpoint_returns_an_empty_org_when_the_user_has_no_membership(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->getJson('/api/apps')
+            ->assertOk()
+            ->assertJsonPath('org', null)
+            ->assertJsonPath('teams', []);
+    }
+
+    public function test_apps_endpoint_does_not_leak_another_users_org_when_the_acting_user_has_no_membership(): void
+    {
+        $user = User::factory()->create();
+
+        $otherOrg = Org::query()->create(['name' => 'Someone Else', 'account_email' => 'other@example.com']);
+        Team::query()->create(['org_id' => $otherOrg->id, 'name' => 'Private Team']);
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/apps')
+            ->assertOk()
+            ->assertJsonPath('org', null)
+            ->assertJsonPath('teams', []);
+
+        $this->assertStringNotContainsString('Private Team', $response->getContent());
     }
 }
