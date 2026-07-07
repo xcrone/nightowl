@@ -31,7 +31,7 @@ cd agent && composer install && vendor/bin/phpunit --testsuite Unit
 cd api && composer install
 cp .env.example .env && php artisan key:generate
 php artisan nightowl:migrate              # creates the nightowl_* schema
-php artisan migrate                       # api's own users/sessions tables (sqlite)
+php artisan migrate                       # api's own users/sessions tables (postgres: nightowl_app db)
 php artisan serve --port=8001             # or 8000, if nothing else is using it
 
 cd web && pnpm install
@@ -61,12 +61,14 @@ The product is an **Org → Teams → Apps** hierarchy that replicates the demo
 documented in `docs/pages/*` (see `docs/README.md`); the full endpoint
 reference is `docs/api-contract.md`.
 
-- **Multi-tenancy by `app_id`.** Orgs/teams/apps live in `api/`'s primary
-  (sqlite) DB (`App` binds routes by its opaque `app_id`). Every `nightowl_*`
-  telemetry row carries a nullable `app_id` (added by an `agent/` migration,
-  backfilled to the seeded default app), so one shared Postgres holds several
-  apps. Per-app telemetry is nested under `/api/apps/{app}/…` and scoped
-  `where app_id = ?` (`TelemetryRecord::scopeForApp`).
+- **Multi-tenancy by `app_id`.** Orgs/teams/apps live in `api/`'s primary DB
+  — a `nightowl_app` Postgres database, on the same server as the agent's
+  `nightowl` telemetry database but kept separate (`App` binds routes by its
+  opaque `app_id`). Every `nightowl_*` telemetry row carries a nullable
+  `app_id` (added by an `agent/` migration, backfilled to the seeded default
+  app), so one shared Postgres instance holds several apps. Per-app
+  telemetry is nested under `/api/apps/{app}/…` and scoped `where app_id = ?`
+  (`TelemetryRecord::scopeForApp`).
 - **Two config registries drive generic, cross-cutting Actions** (`api/app/Actions/`,
   deliberately not a DDD domain — see `api/CLAUDE.md`): `api/config/telemetry.php`
   (raw lists/detail/related via `App\Actions\Telemetry\*`) and

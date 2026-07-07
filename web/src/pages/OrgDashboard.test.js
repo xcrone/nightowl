@@ -3,14 +3,20 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
 
-vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() }, csrfCookie: vi.fn() }))
+vi.mock('../services/api', () => ({
+  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  csrfCookie: vi.fn(),
+}))
 import api from '../services/api'
 import OrgDashboard from './OrgDashboard.vue'
 import { useAuthStore } from '../store/auth'
 
+const org = { uuid: 'org-uuid-1', name: 'Owlworks', account_email: 'owlworks@example.com' }
+
 const teams = [
   {
     id: 1,
+    uuid: 'team-uuid-1',
     name: 'Delta Payments',
     apps_count: 2,
     apps: [
@@ -20,6 +26,7 @@ const teams = [
   },
   {
     id: 2,
+    uuid: 'team-uuid-2',
     name: 'Northwind Traders',
     apps_count: 1,
     apps: [
@@ -33,17 +40,18 @@ function makeRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
+      { path: '/organization', component: { template: '<div />' } },
       { path: '/dashboard/:appId', component: { template: '<div />' } },
     ],
   })
 }
 
-async function mountPage() {
-  api.get.mockImplementation((url) =>
-    url === '/api/orgs'
-      ? Promise.resolve({ data: { data: [{ name: 'Owlworks' }] } })
-      : Promise.resolve({ data: { org: { name: 'Owlworks' }, teams } }),
-  )
+async function mountPage({ orgsList = [org], appsResponse } = {}) {
+  api.get.mockImplementation((url) => {
+    if (url === '/api/orgs') return Promise.resolve({ data: { data: orgsList } })
+    if (url === '/api/apps') return Promise.resolve(appsResponse ?? { data: { org, teams } })
+    return Promise.reject(new Error(`unexpected GET ${url}`))
+  })
   const router = makeRouter()
   const wrapper = mount(OrgDashboard, {
     global: {
@@ -61,7 +69,10 @@ async function mountPage() {
   return { wrapper, router }
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+})
 
 describe('OrgDashboard', () => {
   it('renders the header, team sections and app cards', async () => {
@@ -73,6 +84,13 @@ describe('OrgDashboard', () => {
     expect(wrapper.text()).toContain('Northwind API')
     // error-rate badge is color-coded / formatted
     expect(wrapper.text()).toContain('12.30% err')
+  })
+
+  it('links to the Organization settings page', async () => {
+    const { wrapper } = await mountPage()
+    const link = wrapper.find('[aria-label="Organization settings"]')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('/organization')
   })
 
   it('filters clients and apps by the search box', async () => {
@@ -110,5 +128,100 @@ describe('OrgDashboard', () => {
     await flushPromises()
     expect(logoutSpy).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  it('opens the Add team modal and creates a team', async () => {
+    api.post.mockResolvedValue({ data: { id: 3, uuid: 'team-uuid-3', name: 'New Team' } })
+    const { wrapper } = await mountPage()
+
+    await wrapper.find('[data-test="add-team"]').trigger('click')
+    expect(wrapper.find('[data-test="team-modal-name"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="team-modal-name"]').setValue('New Team')
+    await wrapper.find('[data-test="team-modal-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.post).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/teams`, { name: 'New Team' })
+    expect(wrapper.text()).toContain('New Team')
+    expect(wrapper.find('[data-test="team-modal-name"]').exists()).toBe(false)
+  })
+
+  it('opens the Add app modal from a team and creates an app', async () => {
+    api.post.mockResolvedValue({ data: { app_id: 'c1', name: 'New App', description: '', db_connection: '' } })
+    const { wrapper } = await mountPage()
+
+    const addAppButtons = wrapper.findAll('[data-test="add-app"]')
+    await addAppButtons[0].trigger('click')
+    expect(wrapper.find('[data-test="app-modal-name"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="app-modal-name"]').setValue('New App')
+    await wrapper.find('[data-test="app-modal-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.post).toHaveBeenCalledWith('/api/teams/team-uuid-1/apps', {
+      name: 'New App',
+      description: '',
+      db_connection: '',
+    })
+    expect(wrapper.text()).toContain('New App')
+  })
+
+  it('edits an app via the edit icon', async () => {
+    api.put.mockResolvedValue({ data: { app_id: 'a1', name: 'Delta API Renamed', description: '', db_connection: '' } })
+    const { wrapper } = await mountPage()
+
+    await wrapper.find('[aria-label="Edit app"]').trigger('click')
+    await wrapper.find('[data-test="app-modal-name"]').setValue('Delta API Renamed')
+    await wrapper.find('[data-test="app-modal-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.put).toHaveBeenCalledWith('/api/apps/a1', {
+      name: 'Delta API Renamed',
+      description: '',
+      db_connection: 'ep-delta:5432/d',
+    })
+  })
+
+  it('deletes an app via the delete icon without navigating', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    api.delete.mockResolvedValue({})
+    const { wrapper, router } = await mountPage()
+    const push = vi.spyOn(router, 'push')
+
+    await wrapper.find('[aria-label="Delete app"]').trigger('click')
+    await flushPromises()
+
+    expect(api.delete).toHaveBeenCalledWith('/api/apps/a1')
+    expect(push).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('Delta API')
+    vi.unstubAllGlobals()
+  })
+
+  it('shows no org switcher for a user with just one org', async () => {
+    const { wrapper } = await mountPage({ orgsList: [org] })
+    expect(wrapper.find('[data-test="org-switcher"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Welcome back, Owlworks')
+  })
+
+  it('shows an org switcher and switches orgs when the user belongs to more than one', async () => {
+    const otherOrg = { uuid: 'org-uuid-2', name: 'Other Org', account_email: 'other@example.com' }
+    const otherTeams = [{ id: 9, uuid: 'team-uuid-9', name: 'Other Team', apps_count: 0, apps: [] }]
+    const { wrapper } = await mountPage({ orgsList: [org, otherOrg] })
+
+    const switcher = wrapper.find('[data-test="org-switcher"]')
+    expect(switcher.exists()).toBe(true)
+
+    api.get.mockImplementation((url) => {
+      if (url === '/api/apps') return Promise.resolve({ data: { org: otherOrg, teams: otherTeams } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+
+    await switcher.setValue(otherOrg.uuid)
+    await flushPromises()
+
+    expect(api.get).toHaveBeenCalledWith('/api/apps', { params: { org: otherOrg.uuid } })
+    expect(wrapper.text()).toContain('Other Team')
+    expect(wrapper.text()).not.toContain('Delta Payments')
+    expect(localStorage.getItem('nightowl:currentOrgUuid')).toBe(otherOrg.uuid)
   })
 })

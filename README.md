@@ -53,7 +53,7 @@ cd agent && composer install && vendor/bin/phpunit --testsuite Unit
 cd api && composer install
 cp .env.example .env && php artisan key:generate
 php artisan nightowl:migrate              # creates the nightowl_* schema (incl. app_id)
-php artisan migrate                       # api's own users + orgs/teams/apps tables (sqlite)
+php artisan migrate                       # api's own users + orgs/teams/apps tables (postgres: nightowl_app db)
 php artisan db:seed                       # admin@example.com/password + Owlworks Agency + 4 apps
 php artisan db:seed --class="Database\Seeders\TelemetrySeeder"   # demo telemetry so pages have data
 php artisan serve --port=8000             # or 8001, if 8000 is in use
@@ -90,7 +90,7 @@ own project root, so each subproject keeps its own:
 | File          | Read by              | Purpose                                                                                                                                                              |
 | ------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.env` (root) | `docker-compose.yml`  | nightowl DB credentials, shared `APP_KEY`, dev URLs — substituted into the `postgres`/`agent`/`api` services so they're not hardcoded in three places.                  |
-| `api/.env`    | Laravel (`api/`)       | Full app config — app key, sessions, and (for host-side dev outside Docker) `NIGHTOWL_DB_*` pointed directly at Postgres on port 5433.                                  |
+| `api/.env`    | Laravel (`api/`)       | Full app config — app key, sessions, and (for host-side dev outside Docker) `DB_*`/`NIGHTOWL_DB_*` both pointed directly at Postgres on port 5433, at two separate databases (`nightowl_app` vs `nightowl`) on the same server. |
 | `web/.env`    | Vite (`web/`)          | `VITE_API_URL` — where the SPA sends its API requests.                                                                                                                   |
 | *(none)*      | `agent/`               | It's a Composer package, not an app, so it has no `.env`. Integration/System tests read `NIGHTOWL_TEST_DB_*` via `getenv()` (defaults match docker-compose's Postgres); at runtime its DB config comes from whichever app consumes it (`api/`'s `NIGHTOWL_DB_*`). |
 

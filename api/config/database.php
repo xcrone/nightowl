@@ -97,6 +97,17 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Server-side (named) prepared statements don't survive PgBouncer's
+            // `pool_mode = transaction` (docker-compose.yml routes this connection
+            // through pgbouncer via DB_HOST) — a statement PREPAREd on one backend
+            // can be EXECUTEd against a different backend on the next transaction,
+            // raising "prepared statement ... does not exist" (SQLSTATE 25P02) and
+            // aborting the transaction. Emulating prepares client-side sidesteps
+            // this — needed for any multi-statement transaction on this connection
+            // (e.g. api/'s own uuid-retrofit migrations). Mirrors the identical fix
+            // on the 'nightowl' connection in
+            // agent/src/NightOwlAgentServiceProvider.php.
+            'options' => [PDO::ATTR_EMULATE_PREPARES => true],
         ],
 
         'sqlsrv' => [

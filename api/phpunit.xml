@@ -23,9 +23,35 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- Primary connection (users/orgs/teams/apps — api's own schema) is
+             Postgres in dev/docker/production (nightowl_app db), so tests
+             run against Postgres here too rather than sqlite, to catch
+             Postgres-only behavior (e.g. UniqueConstraintViolationException
+             detection in Register, lockForUpdate() row locking in
+             DestroyOrg/DestroyTeam). SAME shared local test Postgres
+             instance as the 'nightowl' connection below (port 5433), but
+             its own nightowl_app_test database/role — see agent/CLAUDE.md's
+             "PostgreSQL for Tests" section for how that container is
+             provisioned; a second `CREATE DATABASE nightowl_app_test` (and
+             matching role) needs adding there alongside nightowl_test. -->
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="5433"/>
+        <env name="DB_DATABASE" value="nightowl_app_test"/>
+        <env name="DB_USERNAME" value="nightowl_app_test"/>
+        <env name="DB_PASSWORD" value="test123"/>
         <env name="DB_URL" value=""/>
+        <!-- Isolated telemetry DB for the 'nightowl' connection (see
+             $connectionsToTransact in tests using RefreshDatabase) — the
+             SAME shared Postgres instance as dev, but the nightowl_test
+             database/role, never the live nightowl dev database. Already
+             migrated with the nightowl_* schema; see agent/CLAUDE.md's
+             "PostgreSQL for Tests" section for how it's provisioned. -->
+        <env name="NIGHTOWL_DB_HOST" value="127.0.0.1"/>
+        <env name="NIGHTOWL_DB_PORT" value="5433"/>
+        <env name="NIGHTOWL_DB_DATABASE" value="nightowl_test"/>
+        <env name="NIGHTOWL_DB_USERNAME" value="nightowl_test"/>
+        <env name="NIGHTOWL_DB_PASSWORD" value="test123"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

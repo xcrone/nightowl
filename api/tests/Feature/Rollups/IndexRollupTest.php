@@ -26,7 +26,7 @@ class IndexRollupTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     protected function setUp(): void
     {

@@ -2,6 +2,7 @@
 
 namespace App\Domains\Apps\Actions;
 
+use App\Domains\Apps\Resources\AppResource;
 use App\Domains\Apps\Resources\OrgResource;
 use App\Domains\Apps\Resources\TeamResource;
 use App\Models\App;
@@ -24,14 +25,10 @@ class ShowApp
 
     public function handle(App $app)
     {
-        $app->loadMissing('team.org');
+        $app->loadMissing('team.org.owner');
 
         return response()->json([
-            'app_id' => $app->app_id,
-            'name' => $app->name,
-            'description' => $app->description,
-            'db_connection' => $app->db_connection,
-            'environments' => $app->environments ?? [],
+            ...(new AppResource($app))->resolve(),
             'team' => $app->team ? (new TeamResource($app->team))->resolve() : null,
             'org' => $app->team?->org ? (new OrgResource($app->team->org))->resolve() : null,
         ]);

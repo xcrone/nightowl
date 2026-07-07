@@ -53,8 +53,8 @@ class ShowExceptionGroup
 
         // Representative: latest occurrence in the window, else latest all-time.
         $representative = (clone $forClass())->whereBetween('created_at', [$from, $to])
-            ->latest('created_at')->first()
-            ?? (clone $forClass())->latest('created_at')->first();
+            ->latest('created_at')->latest('id')->first()
+            ?? (clone $forClass())->latest('created_at')->latest('id')->first();
 
         abort_if($representative === null, 404);
 

@@ -21,12 +21,14 @@ class ListOrgs
 
     public function handle(ActionRequest $request)
     {
-        $orgs = $request->user()->orgs()->get(['orgs.id', 'orgs.uuid', 'name', 'account_email']);
+        $orgs = $request->user()->orgs()
+            ->with('owner')
+            ->get(['orgs.id', 'orgs.uuid', 'name', 'account_email', 'orgs.owner_id', 'orgs.is_personal']);
 
         // Demo/dev convenience: if membership wasn't seeded for this user,
         // fall back to every org so the dashboard is never empty.
         if ($orgs->isEmpty()) {
-            $orgs = Org::query()->get(['id', 'uuid', 'name', 'account_email']);
+            $orgs = Org::query()->with('owner')->get(['id', 'uuid', 'name', 'account_email', 'owner_id', 'is_personal']);
         }
 
         return OrgResource::collection($orgs);

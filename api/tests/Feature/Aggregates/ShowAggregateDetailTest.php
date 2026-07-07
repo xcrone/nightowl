@@ -19,7 +19,7 @@ class ShowAggregateDetailTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     protected function setUp(): void
     {
@@ -42,7 +42,7 @@ class ShowAggregateDetailTest extends TestCase
         $user = User::factory()->create();
 
         RequestRecord::factory()->count(3)->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'method' => 'POST', 'status_code' => 200, 'duration' => 100]);
-        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'status_code' => 500, 'duration' => 900]);
+        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'method' => 'POST', 'status_code' => 500, 'duration' => 900]);
         // A different route must not leak into this key.
         RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/login', 'status_code' => 200, 'duration' => 50]);
 

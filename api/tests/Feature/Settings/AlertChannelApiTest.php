@@ -19,7 +19,7 @@ class AlertChannelApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     public function test_lists_and_creates_alert_channels_scoped_to_its_app(): void
     {

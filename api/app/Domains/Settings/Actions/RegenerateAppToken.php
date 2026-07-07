@@ -3,7 +3,6 @@
 namespace App\Domains\Settings\Actions;
 
 use App\Models\App;
-use Illuminate\Support\Str;
 use Lorisleiva\Actions\Concerns\AsAction;
 
 /**
@@ -23,7 +22,7 @@ class RegenerateAppToken
 
     public function handle(App $app)
     {
-        $token = 'nwt_'.Str::random(40);
+        $token = App::generateAgentToken();
         $app->update(['agent_token' => $token]);
 
         return response()->json(['agent_token' => $token]);

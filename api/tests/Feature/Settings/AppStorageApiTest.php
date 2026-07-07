@@ -16,7 +16,7 @@ class AppStorageApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     public function test_storage_reports_telemetry_table_footprint(): void
     {

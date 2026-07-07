@@ -18,7 +18,7 @@ class AppSettingsApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     public function test_settings_returns_environments_and_masked_token(): void
     {

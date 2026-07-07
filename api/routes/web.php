@@ -2,6 +2,7 @@
 
 use App\Domains\Auth\Actions\Login;
 use App\Domains\Auth\Actions\Logout;
+use App\Domains\Auth\Actions\Register;
 use Illuminate\Support\Facades\Route;
 
 // Login/logout live here (not routes/api.php) so they run through the 'web'
@@ -10,5 +11,6 @@ use Illuminate\Support\Facades\Route;
 // X-XSRF-TOKEN header. Actions from lorisleiva/laravel-actions are plain
 // invokable classes, so they're referenced directly here exactly like the
 // controller they replaced.
+Route::post('/register', Register::class);
 Route::post('/login', Login::class);
 Route::post('/logout', Logout::class);

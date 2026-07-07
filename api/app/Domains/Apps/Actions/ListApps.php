@@ -10,6 +10,7 @@ use App\Models\Telemetry\ExceptionRecord;
 use App\Models\Telemetry\Issue;
 use App\Models\Telemetry\RequestRecord;
 use Illuminate\Support\Carbon;
+use Lorisleiva\Actions\ActionRequest;
 use Lorisleiva\Actions\Concerns\AsAction;
 
 /**
@@ -25,9 +26,25 @@ class ListApps
         return true;
     }
 
-    public function handle()
+    public function handle(ActionRequest $request)
     {
-        $org = Org::query()->firstOrFail();
+        // ?org=<uuid> lets a user who belongs to more than one Org pick
+        // which one to view (the org switcher on the dashboard) — scoped
+        // through $request->user()->orgs() so requesting an org the user
+        // doesn't belong to 404s rather than leaking another org's data.
+        // Without the query param: the user's own org, same membership
+        // ListOrgs reads — falls back to the first Org in the table only if
+        // they have no membership at all (demo/dev convenience so the
+        // dashboard is never empty), matching ListOrgs's fallback.
+        // Previously this always returned Org::query()->firstOrFail()
+        // regardless of who was asking, which meant a newly registered user
+        // (attached to their own, separate Org) was shown/scoped to
+        // whatever Org happened to be first in the table instead of their
+        // own — invisible teams/apps, and every management mutation 403ing
+        // since they weren't a member of that other Org.
+        $org = $request->filled('org')
+            ? $request->user()->orgs()->where('orgs.uuid', $request->query('org'))->firstOrFail()
+            : ($request->user()->orgs()->first() ?? Org::query()->firstOrFail());
 
         $teams = $org->teams()->with('apps')->get()->map(function ($team) {
             // apps_count/apps are computed extras, not raw Team fields, so
@@ -40,7 +57,7 @@ class ListApps
         });
 
         return response()->json([
-            'org' => (new OrgResource($org))->resolve(),
+            'org' => (new OrgResource($org->loadMissing('owner')))->resolve(),
             'teams' => $teams,
         ]);
     }

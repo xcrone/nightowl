@@ -1,0 +1,11 @@
+-- Runs once, only when the postgres data volume is first initialized
+-- (docker-entrypoint-initdb.d scripts never re-run against an existing
+-- volume). Creates a second database on the SAME Postgres server/instance
+-- as the agent's `nightowl` telemetry database (POSTGRES_DB), so api's own
+-- schema (users, orgs, teams, apps, sessions, ...) lives in Postgres too
+-- without merging into the agent-owned `nightowl_*` tables.
+--
+-- Fresh installs get this automatically. If you're adding this to an
+-- already-initialized volume, create it manually instead:
+--   docker compose exec postgres psql -U nightowl -d nightowl -c "CREATE DATABASE nightowl_app;"
+CREATE DATABASE nightowl_app;

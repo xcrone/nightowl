@@ -15,11 +15,11 @@ return [
     |
     */
 
-    // login/logout live in routes/web.php (not api/*) so the SPA's CORS
-    // preflight for them needs an explicit entry here too — found by
+    // login/logout/register live in routes/web.php (not api/*) so the SPA's
+    // CORS preflight for them needs an explicit entry here too — found by
     // actually driving the login form in a browser: curl doesn't enforce
     // CORS, so this was invisible to curl-based verification.
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout'],
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'logout', 'register'],
 
     'allowed_methods' => ['*'],
 

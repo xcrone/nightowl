@@ -30,6 +30,7 @@ and auto-generated on create via `User::booted()`'s `creating` hook.
 
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
+| `Register` | Creates a `User`, founds a new `Org` for them (`name` = `org_name`, `account_email` = the new user's email), attaches the user to that org, logs the session in (`Auth::login()` + session regenerate), returns `{user: UserResource}` with a 201. | `authorize()` always allows (self-service signup, no invite flow yet). `rules()`: `name` required string, `email` required email unique:users, `password` required string min:8 confirmed (expects `password_confirmation`), `org_name` required string. User creation + Org creation + the pivot attach run inside a single `DB::transaction()`. Deliberately does **not** import anything from `App\Domains\Apps\*` (e.g. no `OrgResource`) — keeps this domain decoupled; the SPA discovers the new org via a follow-up `GET /orgs` call. |
 | `Login` | Validates `email`/`password`, `Auth::attempt()`s them (honoring an optional `remember` boolean), regenerates the session on success, returns `{user: UserResource}`. | `authorize()` always allows (anyone may attempt to log in). `rules()`: `email` required email, `password` required string. Throws `ValidationException` (`email` field, `auth.failed` message) on bad credentials — surfaces as a 422, matching Laravel's default failed-login shape. |
 | `Logout` | Logs the `web` guard out, invalidates the session, regenerates the CSRF token. Returns 204 No Content. | `authorize()` always allows — relies on `routes/web.php` having no additional guard; an unauthenticated caller just logs out a guest session harmlessly. |
 | `ShowAuthenticatedUser` | Returns `{user: UserResource}` for `request->user()`. | Reached only through the `auth:sanctum` middleware group (root aggregator), so `$request->user()` is always present when this runs — a request without a valid session/token never reaches the handler (401 short-circuits first). |
@@ -48,6 +49,7 @@ drop `id` once the SPA is confirmed to key off `uuid` instead.
 
 | Method | URI | Action | Middleware |
 |---|---|---|---|
+| POST | `/register` | `Register` | `web` (session + CSRF, see `routes/web.php`) |
 | POST | `/login` | `Login` | `web` (session + CSRF, see `routes/web.php`) |
 | POST | `/logout` | `Logout` | `web` (session + CSRF, see `routes/web.php`) |
 | GET | `/api/user` | `ShowAuthenticatedUser` | `auth:sanctum` (root aggregator group) |
@@ -58,7 +60,7 @@ None. No events emitted or consumed; no `app/Support/` interface used.
 
 ## Notes
 
-- `Login`/`Logout` are the one exception to "every domain's routes live in
+- `Register`/`Login`/`Logout` are the one exception to "every domain's routes live in
   its own `Routes/api.php`, aggregated by the root loop": they're registered
   directly in `routes/web.php` because they need the `web` middleware group
   (session + CSRF), not `auth:sanctum`. `ShowAuthenticatedUser` follows the

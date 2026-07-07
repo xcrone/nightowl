@@ -85,7 +85,7 @@ class ShowAggregateDetail
 
         // ---- representative label + meta (method/connection/rw/schedule) ----
         $representative = $this->occurrences($model, $config, $rawKey, $from, $to, $request)
-            ->reorder()->latest('created_at')->first();
+            ->reorder()->latest('created_at')->latest('id')->first();
         $meta = $this->meta($representative, $config);
 
         // ---- paginated individual occurrences (+ filter chips) ----

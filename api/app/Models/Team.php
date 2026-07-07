@@ -21,6 +21,12 @@ class Team extends Model
         });
     }
 
+    /** Bind route {team} by the public uuid, never the numeric id. */
+    public function getRouteKeyName(): string
+    {
+        return 'uuid';
+    }
+
     public function org(): BelongsTo
     {
         return $this->belongsTo(Org::class);

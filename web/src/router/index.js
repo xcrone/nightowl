@@ -2,7 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import AppShell from '../layouts/AppShell.vue'
 import Login from '../pages/Login.vue'
+import Register from '../pages/Register.vue'
 import OrgDashboard from '../pages/OrgDashboard.vue'
+import OrganizationPage from '../pages/OrganizationPage.vue'
 
 import AppDashboard from '../pages/app/AppDashboard.vue'
 import IssuesPage from '../pages/app/IssuesPage.vue'
@@ -30,7 +32,9 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: Login, meta: { public: true } },
+    { path: '/register', name: 'register', component: Register, meta: { public: true } },
     { path: '/', name: 'org-dashboard', component: OrgDashboard },
+    { path: '/organization', name: 'organization', component: OrganizationPage },
     {
       path: '/dashboard/:appId',
       component: AppShell,
@@ -79,7 +83,7 @@ router.beforeEach(async (to) => {
     return { name: 'login' }
   }
 
-  if (to.name === 'login' && auth.user) {
+  if ((to.name === 'login' || to.name === 'register') && auth.user) {
     return '/'
   }
 })

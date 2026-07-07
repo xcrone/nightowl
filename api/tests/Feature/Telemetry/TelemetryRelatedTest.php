@@ -18,7 +18,7 @@ class TelemetryRelatedTest extends TestCase
     // (both connections) is needed instead of DatabaseTransactions here.
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     protected function setUp(): void
     {

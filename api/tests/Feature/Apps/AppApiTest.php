@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Apps;
 
+use App\Models\Org;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,7 @@ class AppApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     protected function setUp(): void
     {
@@ -58,6 +60,57 @@ class AppApiTest extends TestCase
 
         $this->actingAs($user)
             ->getJson('/api/apps/does-not-exist/requests')
+            ->assertNotFound();
+    }
+
+    public function test_apps_endpoint_returns_the_current_users_own_org_not_the_first_one_in_the_table(): void
+    {
+        // A pre-existing org (e.g. seeded demo data) that comes first in the
+        // table, but which the acting user is NOT a member of.
+        $otherOrg = Org::query()->create(['name' => 'Someone Else', 'account_email' => 'other@example.com']);
+        Team::query()->create(['org_id' => $otherOrg->id, 'name' => 'Someone Else Team']);
+
+        $user = User::factory()->create();
+        $myOrg = Org::query()->create(['name' => 'My Org', 'account_email' => $user->email]);
+        $myOrg->users()->attach($user->id);
+        Team::query()->create(['org_id' => $myOrg->id, 'name' => 'My Team']);
+
+        $this->actingAs($user)
+            ->getJson('/api/apps')
+            ->assertOk()
+            ->assertJsonPath('org.uuid', $myOrg->uuid)
+            ->assertJsonPath('teams.0.name', 'My Team');
+    }
+
+    public function test_apps_endpoint_returns_the_org_selected_via_the_org_query_param(): void
+    {
+        $user = User::factory()->create();
+
+        $orgA = Org::query()->create(['name' => 'Org A', 'account_email' => 'a@example.com']);
+        $orgA->users()->attach($user->id);
+        Team::query()->create(['org_id' => $orgA->id, 'name' => 'Team A']);
+
+        $orgB = Org::query()->create(['name' => 'Org B', 'account_email' => 'b@example.com']);
+        $orgB->users()->attach($user->id);
+        Team::query()->create(['org_id' => $orgB->id, 'name' => 'Team B']);
+
+        $this->actingAs($user)
+            ->getJson("/api/apps?org={$orgB->uuid}")
+            ->assertOk()
+            ->assertJsonPath('org.uuid', $orgB->uuid)
+            ->assertJsonPath('teams.0.name', 'Team B');
+    }
+
+    public function test_apps_endpoint_rejects_an_org_query_param_the_user_doesnt_belong_to(): void
+    {
+        $user = User::factory()->create();
+        $myOrg = Org::query()->create(['name' => 'My Org', 'account_email' => 'me@example.com']);
+        $myOrg->users()->attach($user->id);
+
+        $otherOrg = Org::query()->create(['name' => 'Not Mine', 'account_email' => 'other@example.com']);
+
+        $this->actingAs($user)
+            ->getJson("/api/apps?org={$otherOrg->uuid}")
             ->assertNotFound();
     }
 }

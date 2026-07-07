@@ -36,22 +36,67 @@ work in one migration set rather than splitting it across batches.
 `App` itself needs **no** retrofit — it already binds/serializes on the
 opaque `app_id` (`App::getRouteKeyName`), not the integer `id`.
 
+`Org`, `Team`, and `User` (`app/Models/User.php`) now also bind their
+`{org}`/`{team}`/`{user}` route parameters on `uuid`
+(`getRouteKeyName(): string { return 'uuid'; }`) — added alongside the CRUD
+Actions below, since this was the first batch to actually introduce those
+route params. `App` still binds on its own opaque `app_id`, unaffected.
+
+`orgs.owner_id`/`orgs.is_personal` (retrofit migration
+`2026_07_07_120000_add_owner_to_orgs_table`) added an ownership concept on
+top of the flat `org_user` membership pivot: `Org::owner()` (`BelongsTo`
+`User`). Existing rows were backfilled with `owner_id` = the org's
+first-attached member (raw `org_user` query), `is_personal` left at its
+default `false` for all of them — see the Notes entry below for what these
+two columns mean in practice and their known scope limits.
+
 ## Business logic (Actions)
 
 | Action | Does | Notes (auth, rules, invariants) |
 |---|---|---|
 | `ListOrgs` | Orgs the authenticated user belongs to (`$request->user()->orgs()`); falls back to every `Org` if the user has no membership (demo/dev convenience so the dashboard is never empty). | `authorize()` always allows. This endpoint had **zero test coverage** before this migration; `tests/Feature/Apps/OrgApiTest.php` now covers both branches. |
-| `ListApps` | The first `Org`'s teams, each with its apps and a live 1h `health()` summary (error rate, 5xx count, exceptions, open issues, connected/disconnected) — drives the Org Dashboard cards. | `authorize()` always allows. `Org::query()->firstOrFail()` — single-org assumption carried forward unchanged from the pre-migration controller (out of scope to fix here). |
-| `ShowApp` | One `App` + its `team`/`org`, `loadMissing('team.org')`. | `authorize()` always allows. Route-bound `{app}` (opaque `app_id`) — 404s automatically if unknown. |
+| `ListApps` | The selected `Org`'s teams, each with its apps and a live 1h `health()` summary (error rate, 5xx count, exceptions, open issues, connected/disconnected) — drives the Org Dashboard cards + the org switcher. | `authorize()` always allows. `?org=<uuid>` (the org switcher) resolves via `$request->user()->orgs()->where('orgs.uuid', ...)->firstOrFail()` — 404s if the user isn't a member of that org, never leaking another org's data. Without the query param: `$request->user()->orgs()->first()`, falling back to `Org::query()->firstOrFail()` only if the user has no membership at all (same dev/demo convenience as `ListOrgs`). |
+| `ShowApp` | One `App` (via `AppResource`) + its `team`/`org`, `loadMissing('team.org')`. | `authorize()` always allows. Route-bound `{app}` (opaque `app_id`) — 404s automatically if unknown. |
 | `ShowDashboard` | App Dashboard summary: request volume/latency/status mix, exception counts, job throughput, most-active/most-impacted users — all via three Postgres-specific raw-SQL aggregate queries (`percentile_cont`, `::bigint` casts), preserved exactly from the pre-migration controller (not made portable). Period-aware (`Period::resolve()`). | `authorize()` always allows. No rules — route-bound `{app}`, period resolved from the query string. |
+| `StoreOrg` | Founds a new `Org`, attaches the creator as its first member. | `authorize()` always allows (any authenticated user may found an org). `rules()`: `name` required, `account_email` required email. |
+| `UpdateOrg` | Renames an `Org`/changes its billing contact email. | `authorize()`: membership via `AuthorizesOrgMembership::authorizeOrgMember()`. `rules()`: both fields `sometimes\|required`. |
+| `DestroyOrg` | Deletes an `Org`. | `authorize()`: membership. Refuses (422, `"Delete this org's teams first."`) if it still has teams — won't cascade-wipe teams/apps silently. Runs inside `DB::transaction()` against a `lockForUpdate()`-locked re-fetch of the org row (see the Notes entry below on the TOCTOU fix), using the shared `RefusesCascadeDelete` trait for the "has children" check. |
+| `ListOrgMembers` | The org's current members (`OrgMemberResource::collection`). | `authorize()`: membership. Added so the SPA can load the existing member list on page load instead of only building one up from `AddOrgMember`/`RemoveOrgMember` responses within a session. |
+| `AddOrgMember` | Attaches an **existing** user account to an org by email, returns the single newly-added member (`(new OrgMemberResource($user))->resolve()`, HTTP 201). | `authorize()`: membership. `rules()`: `email` required, must `exists:users,email` — there is no invite-by-email infrastructure, so this cannot onboard a brand-new account, only grant an existing one access. Previously returned the org's *entire* member list re-queried/re-serialized after every add; changed to return just the added member (see Notes). |
+| `RemoveOrgMember` | Detaches a member from an org. | `authorize()`: membership. `{user}` route param binds by `uuid` (never the integer id). |
+| `TransferOrgOwnership` | Reassigns `$org->owner_id` to another existing member, looked up by email. | `authorize()`: **not** membership — only the *current owner* (`$org->owner_id === $request->user()?->id`), read off `$request->route('org')` same as the other Actions. `rules()`: `email` required, must `exists:users,email`. `handle()` 422s (`ValidationException` on `email`) if `$org->is_personal` (never transferable) or if the target isn't already a member of `$org`. |
+| `StoreTeam` | Creates a `Team` under an `Org`. | `authorize()`: membership. `rules()`: `name` required. |
+| `UpdateTeam` | Renames a `Team`. | `authorize()`: membership on `$team->org`. `rules()`: `name` required. `handle()` still type-hints unused `Org $org` — see the Notes entry below for why that's load-bearing, not just style. |
+| `DestroyTeam` | Deletes a `Team`. | Same authorize as `UpdateTeam`. Refuses (422, `"Delete this team's apps first."`) if it still has apps. Same unused-`Org $org`-parameter note as `UpdateTeam`; same `DB::transaction()` + `lockForUpdate()` + `RefusesCascadeDelete` shape as `DestroyOrg`. |
+| `StoreApp` | Creates an `App` under a `Team`, minting a fresh unique opaque `app_id` and an `agent_token` (`App::generateAgentToken()`, the same `'nwt_'`-prefixed format `Settings\Actions\RegenerateAppToken` issues). Returns `AppResource` (same shape `ShowApp` embeds). | `authorize()`: membership on `$team->org`. `rules()`: `name` required, `description`/`db_connection`/`environments` nullable. |
+| `UpdateApp` | Updates an `App`'s display fields, returns `AppResource`. | `authorize()`: membership on `$app->team->org`. `rules()`: `name` sometimes\|required, rest nullable. |
+| `DestroyApp` | Deletes an `App`. | Same authorize as `UpdateApp`. **Does not** cascade-delete the app's telemetry rows in the separate `nightowl_*` tables — different database, owned by `nightowl/agent`, out of scope here. |
+
+All ten CRUD/membership Actions above (i.e. every one except
+`TransferOrgOwnership`) share one `authorize()` idiom: read the route-bound
+model off `$request->route(...)` (required — `authorize()`/`rules()` run
+before the router's own binding reaches `handle()`), then check org
+membership via `App\Support\AuthorizesOrgMembership`'s
+`authorizeOrgMember(Org $org, ?User $user)` — an indexed
+`$org->users()->whereKey($user->id)->exists()` check rather than loading
+every member row just to call `contains()` on the collection. Mirrors
+`App\Support\AuthorizesAppScope`'s role for the app_id-ownership check used
+elsewhere in Settings/Issues. `TransferOrgOwnership` deliberately does
+**not** use this trait — see its Notes entry below for why plain membership
+isn't the right check for handing off ownership.
 
 ## Resources
 
 - `OrgResource` — `id`, `uuid` (new, additive this pass — `id` stays so no
   existing consumer breaks; a follow-up coordinated with the web side will
-  drop it once the SPA keys off `uuid` instead), `name`, `account_email`.
-  Used by `ListOrgs` (as a collection) and embedded (via `->resolve()`) in
-  `ListApps`'s `org` key and `ShowApp`'s `org` key.
+  drop it once the SPA keys off `uuid` instead), `name`, `account_email`,
+  `is_personal`, `owner_uuid` (the owner's `uuid` — never the raw
+  `owner_id` integer FK, per `uuid-public-ids`; null for a pre-existing org
+  backfilled with no candidate owner). Used by `ListOrgs` (as a collection)
+  and embedded (via `->resolve()`) in `ListApps`'s `org` key and `ShowApp`'s
+  `org` key. Every one of those call sites (plus `StoreOrg`, `UpdateOrg`,
+  `TransferOrgOwnership`) `loadMissing('owner')`/`with('owner')` the org
+  first so serializing `owner_uuid` doesn't N+1.
 - `TeamResource` — `id`, `uuid` (same additive rule), `name`. Deliberately
   *only* the base Team fields: `ListApps`'s `apps_count`/`apps` keys are a
   computed `health()` summary per app, not a raw relation dump, so they're
@@ -59,6 +104,15 @@ opaque `app_id` (`App::getRouteKeyName`), not the integer `id`.
   TeamResource($team))->resolve(), [...])`) rather than living on the
   Resource itself. `ShowApp`'s `team` key uses the same Resource without
   the extra keys.
+- `AppResource` — `app_id`, `name`, `description`, `db_connection`,
+  `environments`. Shared by `ShowApp` (merged with `team`/`org`, same
+  spread-then-extend convention as `TeamResource` above), `StoreApp`, and
+  `UpdateApp` — previously each of those three hand-built the same flat
+  array independently.
+- `OrgMemberResource` — `uuid`, `name`, `email` (no `id` — uuid-public-ids:
+  the integer PK never serializes here). Used by `AddOrgMember`'s
+  single-member response and `ListOrgMembers`'s collection so a raw `User`
+  (or collection) is never serialized directly.
 - `ListApps`'s per-app `health()` payload and `ShowDashboard`'s entire
   summary are pure computed aggregates (GROUP BY / window-function
   results), not 1:1 serialized models — no Resource for those, per the
@@ -72,8 +126,21 @@ opaque `app_id` (`App::getRouteKeyName`), not the integer `id`.
 | Method | URI | Action | Middleware |
 |---|---|---|---|
 | GET | `/api/orgs` | `ListOrgs` | `auth:sanctum` (root aggregator group) |
+| POST | `/api/orgs` | `StoreOrg` | `auth:sanctum` |
+| PUT | `/api/orgs/{org}` | `UpdateOrg` | `auth:sanctum` |
+| PUT | `/api/orgs/{org}/owner` | `TransferOrgOwnership` | `auth:sanctum` |
+| DELETE | `/api/orgs/{org}` | `DestroyOrg` | `auth:sanctum` |
+| GET | `/api/orgs/{org}/members` | `ListOrgMembers` | `auth:sanctum` |
+| POST | `/api/orgs/{org}/members` | `AddOrgMember` | `auth:sanctum` |
+| DELETE | `/api/orgs/{org}/members/{user}` | `RemoveOrgMember` | `auth:sanctum` |
+| POST | `/api/orgs/{org}/teams` | `StoreTeam` | `auth:sanctum` |
+| PUT | `/api/orgs/{org}/teams/{team}` | `UpdateTeam` | `auth:sanctum` |
+| DELETE | `/api/orgs/{org}/teams/{team}` | `DestroyTeam` | `auth:sanctum` |
 | GET | `/api/apps` | `ListApps` | `auth:sanctum` (root aggregator group) |
 | GET | `/api/apps/{app}` | `ShowApp` | `auth:sanctum` (root aggregator group) |
+| POST | `/api/teams/{team}/apps` | `StoreApp` | `auth:sanctum` |
+| PUT | `/api/apps/{app}` | `UpdateApp` | `auth:sanctum` |
+| DELETE | `/api/apps/{app}` | `DestroyApp` | `auth:sanctum` |
 | GET | `/api/apps/{app}/dashboard` | `ShowDashboard` | `auth:sanctum` (root aggregator group) |
 
 ## Events & cross-module contracts
@@ -83,10 +150,91 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
 
 ## Notes
 
-- `ListApps::handle()`'s single-`Org` assumption (`Org::query()->firstOrFail()`)
-  and its non-app-scoped nature are pre-existing limitations carried
-  forward unchanged from `AppController::index()` — not introduced or
-  fixed by this migration.
+- Ownership: every `Org` now has an `owner_id`/`is_personal` in addition to
+  the flat `org_user` membership pivot. `App\Domains\Auth\Actions\Register`
+  marks a freshly-registered user's founding org `is_personal = true` with
+  `owner_id` = that user — a personal org's owner is fixed for life,
+  `TransferOrgOwnership` refuses (422 on `email`) to reassign it even to
+  the owner's own request. `StoreOrg` sets a real, transferable `owner_id`
+  (the creator) on every subsequently-founded org, `is_personal` staying at
+  its default `false`. `TransferOrgOwnership` is the only Action gated on
+  ownership rather than plain membership (`$org->owner_id ===
+  $request->user()?->id`, not `AuthorizesOrgMembership`) — restricted to
+  the current owner, and refuses (422 on `email`) a target email that isn't
+  already a member of the org. **Deliberate, known scope limit:**
+  `RemoveOrgMember` and `DestroyOrg` were *not* changed to check ownership
+  — any member can still remove the org's owner as a member, or delete the
+  org outright, exactly as before this change. That's an intentional
+  smaller-scope decision (this batch only introduced ownership for the
+  *transfer* flow), not an oversight — tightening those two Actions to
+  respect ownership is a separate, not-yet-scoped follow-up.
+- Full CRUD + membership management batch: `StoreOrg`/`UpdateOrg`/`DestroyOrg`,
+  `AddOrgMember`/`RemoveOrgMember`, `StoreTeam`/`UpdateTeam`/`DestroyTeam`,
+  `StoreApp`/`UpdateApp`/`DestroyApp` — before this batch the only way any
+  `Org`/`Team`/`App`/membership row existed was `database/seeders/OrgSeeder.php`.
+  Every destructive Action that has children (`DestroyOrg` vs. teams,
+  `DestroyTeam` vs. apps) refuses with a 422 rather than relying on the DB's
+  `cascadeOnDelete` to silently wipe multiple rows from one call — delete the
+  children first. `DestroyApp` is the one exception: it deletes the `App` row
+  outright, but explicitly does **not** touch the app's telemetry in the
+  separate `nightowl_*` tables (different database, owned by `nightowl/agent`).
+  New tests: `tests/Feature/Apps/OrgManagementApiTest.php`,
+  `TeamManagementApiTest.php`, `AppManagementApiTest.php`.
+- `App\Support\AuthorizesOrgMembership` (a trait, alongside the pre-existing
+  `AuthorizesAppScope`) centralizes the "is this user a member of the org
+  that owns this route model" check shared by all ten Actions above, instead
+  of each repeating `$org->users->contains($request->user())` inline.
+  `App::generateAgentToken()` similarly centralizes the `'nwt_'`-prefixed
+  token format so `StoreApp` and `Settings\Actions\RegenerateAppToken` share
+  one implementation instead of two copies.
+- `UpdateTeam`/`DestroyTeam`'s `handle()` keeps an unused, type-hinted
+  `Org $org` parameter ahead of `Team $team`. This looks like it should be
+  removable (read `{team}` off `$request->route('team')` instead, like
+  `authorize()` does) — that was tried during a cleanup pass and broke both
+  Actions: Laravel's implicit route-model binding is resolved by reflecting
+  on `handle()`'s own parameter types, not `authorize()`'s. Drop the `Org`
+  type hint from `handle()` and `{org}` (and, empirically, `{team}` too) is
+  never substituted for a model at all — `$request->route('team')` then
+  returns the raw uuid string everywhere, including inside `authorize()`,
+  500ing every call. So `handle()`'s signature isn't just fixing positional
+  argument order, it's the mechanism that makes the route bindings exist in
+  the first place; the unused `Org $org` parameter is load-bearing, not
+  cosmetic.
+- `AddOrgMember` has no email-invite infrastructure behind it — it can only
+  attach an *existing* user account (looked up by email) to an org, never
+  create one. Onboarding a brand-new teammate still requires them to register
+  first (`App\Domains\Auth\Actions\Register`) before anyone can add them.
+  Its response is a single member object, not a list — a follow-up on the web
+  side updates the SPA to match (`{ uuid, name, email }`, HTTP 201).
+- Code-review follow-up (post-CRUD-batch): `DestroyOrg`/`DestroyTeam`'s
+  original "check `exists()`, then `delete()`" was a TOCTOU race — a
+  concurrent insert of a new child row between the check and the delete
+  would be silently cascade-deleted (`teams.org_id`/`apps.team_id` are both
+  `cascadeOnDelete()`). Both now re-fetch the parent row with
+  `lockForUpdate()` inside a `DB::transaction()` before the children-exist
+  check, so a concurrent INSERT referencing that row via FK is blocked
+  until this transaction commits/rolls back. The shared "refuse if it has
+  children" check is factored into
+  `App\Domains\Apps\Support\RefusesCascadeDelete` (a trait used by both
+  Actions) instead of being duplicated. Same pass added `ListOrgMembers`
+  (there was previously no way to fetch an org's existing member list —
+  only `AddOrgMember`/`RemoveOrgMember` responses within a session) and
+  dropped the leaked `id` key from `OrgMemberResource`.
+- `ListApps::handle()` used to be `Org::query()->firstOrFail()` — literally
+  the first `Org` row in the whole table, regardless of who was asking. That
+  was carried forward unchanged from the pre-migration controller as an
+  out-of-scope limitation, but the CRUD/membership batch above made it an
+  active bug: a newly registered user (attached to their own, separate `Org`
+  by `Register`) was shown/scoped to whichever `Org` happened to be first in
+  the table instead of their own — invisible teams/apps on the dashboard,
+  and every `Organization` page mutation 403ing since they weren't a member
+  of that other `Org`. Fixed to `$request->user()->orgs()->first() ??
+  Org::query()->firstOrFail()`, mirroring `ListOrgs`'s existing membership
+  lookup + no-membership fallback. `ListApps`'s non-app-scoped nature (it
+  still only supports one `Org` per user, not a picker across several) is a
+  separate, remaining limitation — see the `StoreOrg`/`AddOrgMember` note
+  above for why a second `Org` still isn't reachable from the UI.
+  New test: `AppApiTest::test_apps_endpoint_returns_the_current_users_own_org_not_the_first_one_in_the_table`.
 - Relocated tests (Batch 4 of the controllers → Actions migration):
   `tests/Feature/Apps/AppScopingTest.php`'s `test_apps_endpoint_returns_teams_and_apps`
   / `test_app_show_returns_the_app` / `test_unknown_app_is_not_found` now

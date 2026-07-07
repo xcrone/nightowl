@@ -232,6 +232,14 @@ final class NightOwlAgentServiceProvider extends ServiceProvider
             'charset' => 'utf8',
             'prefix' => '',
             'schema' => 'public',
+            // Server-side (named) prepared statements don't survive PgBouncer's
+            // `pool_mode = transaction`: a statement PREPAREd on one backend can be
+            // EXECUTEd against a different backend on the next transaction, raising
+            // "prepared statement ... does not exist" (SQLSTATE 25P02) and aborting
+            // the transaction. Emulating prepares client-side sidesteps this — needed
+            // for any multi-statement transaction on this connection (e.g. api/'s
+            // uuid-retrofit migrations) when routed through pgbouncer, as api/'s does.
+            'options' => [\PDO::ATTR_EMULATE_PREPARES => true],
         ]);
     }
 

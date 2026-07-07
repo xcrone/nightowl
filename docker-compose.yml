@@ -23,6 +23,10 @@ services:
       - "127.0.0.1:5433:5432"
     volumes:
       - nightowl_data:/var/lib/postgresql/data
+      # Only runs on first init of an empty volume — creates api's own
+      # `nightowl_app` database alongside the agent's `nightowl` one, same
+      # server/instance, separate schema/ownership.
+      - ./docker/postgres/init-app-db.sql:/docker-entrypoint-initdb.d/init-app-db.sql:ro
     command: >
       postgres
       -c synchronous_commit=off
@@ -94,8 +98,7 @@ services:
     # container's PID 1 is the real server and inherits the full env. The
     # router script uses getcwd() to locate index.php, so the working
     # directory must actually be public/ (not just docroot via -t). Migrate
-    # api's own (sqlite) schema on boot since the image ships without a
-    # pre-populated database file.
+    # api's own schema (Postgres `nightowl_app` DB, see below) on boot.
     command: >
       sh -c "php artisan migrate --force &&
              cd public &&
@@ -105,6 +108,17 @@ services:
       FRONTEND_URLS: ${FRONTEND_URL:-http://localhost:5173}
       SANCTUM_STATEFUL_DOMAINS: localhost:5173
       SESSION_DOMAIN: localhost
+      # api's own schema (users, orgs, teams, apps, sessions, ...) — a
+      # separate `nightowl_app` database on the SAME Postgres server as the
+      # agent's `nightowl` telemetry DB below, not merged into it. Via
+      # PgBouncer for the same reason as NIGHTOWL_DB_* below (per-request
+      # connection churn).
+      DB_CONNECTION: pgsql
+      DB_HOST: pgbouncer
+      DB_PORT: 5432
+      DB_DATABASE: nightowl_app
+      DB_USERNAME: ${NIGHTOWL_DB_USERNAME:-nightowl}
+      DB_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
       # Via PgBouncer, not direct postgres: this container opens a fresh
       # connection per request (no persistent connection like the agent
       # daemon has), and direct connections showed intermittent SCRAM auth

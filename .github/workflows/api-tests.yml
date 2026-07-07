@@ -63,8 +63,25 @@ jobs:
           NIGHTOWL_DB_PASSWORD: nightowl
         run: php artisan nightowl:migrate
 
+      # api's own primary schema (users/orgs/teams/apps) is Postgres in
+      # dev/docker/production too (nightowl_app db) — a second database on
+      # the SAME postgres service, so tests catch Postgres-only behavior
+      # (UniqueConstraintViolationException, lockForUpdate()) rather than
+      # running the primary connection against sqlite. Migrations for it run
+      # automatically via RefreshDatabase once the (empty) database exists.
+      - name: Create the primary (nightowl_app_test) database
+        env:
+          PGPASSWORD: nightowl
+        run: psql -h 127.0.0.1 -U nightowl -d nightowl -c "CREATE DATABASE nightowl_app_test;"
+
       - name: Run tests
         env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: nightowl_app_test
+          DB_USERNAME: nightowl
+          DB_PASSWORD: nightowl
           NIGHTOWL_DB_HOST: 127.0.0.1
           NIGHTOWL_DB_PORT: 5432
           NIGHTOWL_DB_DATABASE: nightowl

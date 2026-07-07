@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 /**
  * A monitored application. Its opaque `app_id` appears in every
@@ -13,6 +14,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class App extends Model
 {
     protected $guarded = ['id'];
+
+    /** Shared 'nwt_'-prefixed format for a fresh agent token (issued on app creation and on regeneration). */
+    public static function generateAgentToken(): string
+    {
+        return 'nwt_'.Str::random(40);
+    }
 
     protected $casts = [
         'environments' => 'array',

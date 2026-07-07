@@ -56,6 +56,13 @@ async function submit() {
       >
         {{ form.submitting ? 'Signing in…' : 'Sign in' }}
       </button>
+
+      <p class="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
+        Need an account?
+        <router-link to="/register" class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+          Sign up
+        </router-link>
+      </p>
     </form>
   </div>
 </template>

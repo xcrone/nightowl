@@ -49,7 +49,7 @@ class ShowIssue
                 fn ($q) => $q->where('class', $issue->exception_class),
             );
 
-        $representative = (clone $occurrenceQuery())->latest('created_at')->first();
+        $representative = (clone $occurrenceQuery())->latest('created_at')->latest('id')->first();
 
         $occurrences = (clone $occurrenceQuery())->latest('created_at')->limit(20)->get()
             ->map(fn ($e) => [

@@ -29,6 +29,12 @@ class User extends Authenticatable
         });
     }
 
+    /** Bind route {user} by the public uuid, never the numeric id. */
+    public function getRouteKeyName(): string
+    {
+        return 'uuid';
+    }
+
     public function orgs(): BelongsToMany
     {
         return $this->belongsToMany(Org::class);

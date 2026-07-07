@@ -14,26 +14,28 @@ use Tests\TestCase;
 
 class TelemetryApiTest extends TestCase
 {
-    // RefreshDatabase (not DatabaseTransactions) because the sqlite side
-    // needs migrate:fresh to create the users table; it only migrates the
-    // default connection, so the real nightowl Postgres schema is untouched
-    // — connectionsToTransact below still wraps it in a rolled-back
-    // transaction so these tests don't leave data behind.
+    // RefreshDatabase (not DatabaseTransactions) because the primary
+    // (pgsql) side needs migrate:fresh to create the users table; it only
+    // migrates the default connection, so the real nightowl Postgres
+    // schema is untouched — connectionsToTransact below still wraps it in
+    // a rolled-back transaction so these tests don't leave data behind.
     use RefreshDatabase;
 
     /**
      * Wrap both the app's own default connection and the nightowl Postgres
-     * connection in a transaction, since telemetry data lives in a real,
-     * shared Postgres database rather than the sqlite testing connection.
+     * connection in a transaction — both are real, shared Postgres
+     * databases (nightowl_app_test / nightowl_test) rather than an
+     * in-memory testing connection.
      *
-     * Must be the literal connection name ('sqlite', per phpunit.xml's
-     * DB_CONNECTION), not null — RefreshDatabase caches the in-memory PDO
-     * per connection name, and other test classes that don't override this
-     * property transact against config('database.default') (also
-     * 'sqlite'). Using null here would cache under a different key and the
-     * users table would appear to vanish for whichever class runs second.
+     * Must be the literal connection name ('pgsql', per phpunit.xml's
+     * DB_CONNECTION), not null — RefreshDatabase caches the connection's
+     * transaction state per connection name, and other test classes that
+     * don't override this property transact against
+     * config('database.default') (also 'pgsql'). Using null here would
+     * cache under a different key and the users table would appear to
+     * vanish for whichever class runs second.
      */
-    protected $connectionsToTransact = ['sqlite', 'nightowl'];
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
 
     protected function setUp(): void
     {
