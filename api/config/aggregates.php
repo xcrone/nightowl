@@ -34,6 +34,17 @@ use App\Models\Telemetry\ScheduledTask;
 |   'model'        raw Eloquent model to GROUP BY.
 |   'group_by'     column(s) forming the aggregation key.
 |   'label'        column shown as the row's representative label.
+|   'extra'        [col, ...] or [alias => col, ...] → extra columns carried
+|                  through as the group's latest occurrence's value (ordered
+|                  by created_at/id desc — not MAX(), which is a meaningless
+|                  pick for text/bool columns; see App\Support\AggregateQuery).
+|   'representative_bool' [alias => col, ...] → like 'extra', but for a
+|                  boolean column that also has a same-named 'count_buckets'
+|                  SUM (e.g. exceptions' handled/unhandled) — computed under
+|                  an internal alias and promoted over the SUM by
+|                  App\Support\AggregateQuery::normalizeRow(), since a group's
+|                  badge needs the latest occurrence's flag, not "any
+|                  occurrence in the group was true".
 |   'duration'     true → emit avg/p95/min/max over the `duration` column.
 |   'count_buckets' [alias => [[col, op, val], ...]] → conditional COUNT()s
 |                   (conditions AND'd). App\Support\AggregateQuery turns each
@@ -214,6 +225,12 @@ return [
         'model' => ExceptionRecord::class,
         'group_by' => ['class'], 'label' => 'class',
         'extra' => ['message', 'source' => 'execution_source'],
+        // The list badge shows one handled/unhandled status per group, which
+        // must match the group's *latest* occurrence (what the exception-group
+        // detail page shows) — not "any occurrence in the group was handled",
+        // which is what naively reusing the count_buckets SUM below as a
+        // boolean would give. See App\Support\AggregateQuery.
+        'representative_bool' => ['handled'],
         'count_buckets' => [
             'handled' => [['handled', '=', true]],
             'unhandled' => [['handled', '=', false]],

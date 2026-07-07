@@ -7,8 +7,9 @@ import { relativeTime, formatBytes } from '../../utils/format'
 import StatPanel from '../../components/StatPanel.vue'
 
 // Per-app configuration hub: App ID, onboarding template (sync/apply),
-// and tabbed sections (Environments default). Read-only demo — most writes
-// are disabled but the controls are present.
+// and tabbed sections (Environments default). Thresholds/Issues/Environments
+// writes persist for real; only Danger Zone's destructive actions (transfer/
+// delete the app) are disabled — see that tab's own notice.
 // GET /api/apps/{appId}/settings
 const route = useRoute()
 const app = useAppStore()
@@ -51,10 +52,14 @@ const DEFAULT_THRESHOLD_MS = 1000
 // slug -> { value: string, active: boolean }
 const thresholds = reactive({})
 
+// slug -> save error string (cleared on each attempt).
+const thresholdErrors = reactive({})
+
 const AUTO_RESOLVE_OPTIONS = [3, 7, 14, 30, 60, 90]
 const AUTO_RESOLVE_KEY = 'issues.auto_resolve_days'
 const autoResolveDays = ref('14')
 const issuesSaving = ref(false)
+const issuesError = ref('')
 
 const storage = reactive({ loading: false, loaded: false, tables: [], totalBytes: 0 })
 const formatRows = (rows) => Number(rows ?? 0).toLocaleString('en-US')
@@ -116,17 +121,23 @@ function addThreshold(slug) {
 async function saveThreshold(slug) {
   const value = Number(thresholds[slug].value)
   if (!Number.isFinite(value)) return
+  thresholdErrors[slug] = ''
   // UpdateAppSetting requires `value` to be a string (is_string()).
   try {
     await api.put(`/api/apps/${appId.value}/settings/${thresholdKey(slug)}`, { value: String(value) })
-  } catch { /* demo no-op */ }
+  } catch (e) {
+    thresholdErrors[slug] = e?.response?.data?.message ?? 'Could not save threshold.'
+  }
 }
 
 async function saveIssues() {
   issuesSaving.value = true
+  issuesError.value = ''
   try {
     await api.put(`/api/apps/${appId.value}/settings/${AUTO_RESOLVE_KEY}`, { value: String(Number(autoResolveDays.value)) })
-  } catch { /* demo no-op */ } finally {
+  } catch (e) {
+    issuesError.value = e?.response?.data?.message ?? 'Could not save the auto-resolve window.'
+  } finally {
     issuesSaving.value = false
   }
 }
@@ -213,11 +224,6 @@ watch(appId, load, { immediate: true })
       <button type="button" class="rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800">
         Edit app
       </button>
-    </div>
-
-    <!-- Read-only banner -->
-    <div class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-      Read-only demo — explore every setting; changes are disabled.
     </div>
 
     <!-- App ID -->
@@ -330,29 +336,32 @@ watch(appId, load, { immediate: true })
             automatic issue and notification. Add a threshold per resource type.
           </p>
           <ul class="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
-            <li v-for="t in RESOURCE_TYPES" :key="t.slug" class="flex items-center justify-between gap-3 py-2">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ t.label }}</span>
-              <div v-if="thresholds[t.slug]?.active" class="flex items-center gap-2">
-                <input
-                  v-model="thresholds[t.slug].value"
-                  type="number"
-                  min="0"
-                  step="50"
-                  class="w-24 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                />
-                <span class="text-xs text-gray-400 dark:text-gray-500">ms</span>
+            <li v-for="t in RESOURCE_TYPES" :key="t.slug" class="py-2">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-sm text-gray-700 dark:text-gray-300">{{ t.label }}</span>
+                <div v-if="thresholds[t.slug]?.active" class="flex items-center gap-2">
+                  <input
+                    v-model="thresholds[t.slug].value"
+                    type="number"
+                    min="0"
+                    step="50"
+                    class="w-24 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  />
+                  <span class="text-xs text-gray-400 dark:text-gray-500">ms</span>
+                  <button
+                    type="button"
+                    class="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                    @click="saveThreshold(t.slug)"
+                  >Save</button>
+                </div>
                 <button
+                  v-else
                   type="button"
-                  class="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                  @click="saveThreshold(t.slug)"
-                >Save</button>
+                  class="rounded border border-dashed border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                  @click="addThreshold(t.slug)"
+                >Add threshold</button>
               </div>
-              <button
-                v-else
-                type="button"
-                class="rounded border border-dashed border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-                @click="addThreshold(t.slug)"
-              >Add threshold</button>
+              <p v-if="thresholdErrors[t.slug]" class="mt-1 text-right text-xs text-red-600 dark:text-red-400">{{ thresholdErrors[t.slug] }}</p>
             </li>
           </ul>
         </StatPanel>
@@ -376,6 +385,7 @@ watch(appId, load, { immediate: true })
               @click="saveIssues"
             >{{ issuesSaving ? 'Saving…' : 'Save' }}</button>
           </div>
+          <p v-if="issuesError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ issuesError }}</p>
         </StatPanel>
 
         <!-- Storage -->

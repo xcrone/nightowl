@@ -302,6 +302,93 @@ class IndexAggregateTest extends TestCase
     }
 
     /**
+     * Bug fix: a group's handled/unhandled badge must reflect the group's
+     * *latest* occurrence (matching Exceptions\ShowExceptionGroup's
+     * representative pick), not "any occurrence in the group was handled" —
+     * a mostly-unhandled group (5 unhandled + 1 handled) whose latest
+     * occurrence is unhandled must report `handled: false`, not `true`.
+     */
+    public function test_exceptions_aggregate_handled_reflects_latest_occurrence_not_any_true(): void
+    {
+        $user = User::factory()->create();
+
+        ExceptionRecord::factory()->count(5)->create([
+            'app_id' => 'agg_app', 'class' => 'App\\LogicException',
+            'handled' => false, 'created_at' => now()->subMinutes(10),
+        ]);
+        // The one handled occurrence is the oldest, not the latest.
+        ExceptionRecord::factory()->create([
+            'app_id' => 'agg_app', 'class' => 'App\\LogicException',
+            'handled' => true, 'created_at' => now()->subMinutes(20),
+        ]);
+        // The latest occurrence overall is unhandled.
+        ExceptionRecord::factory()->create([
+            'app_id' => 'agg_app', 'class' => 'App\\LogicException',
+            'handled' => false, 'created_at' => now(),
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/exceptions')->json('data'))
+            ->firstWhere('class', 'App\\LogicException');
+
+        $this->assertSame(7, $row['total']);
+        $this->assertFalse($row['handled']);
+    }
+
+    /** Bug fix: the inverse case — latest occurrence handled must report `handled: true`. */
+    public function test_exceptions_aggregate_handled_true_when_latest_occurrence_is_handled(): void
+    {
+        $user = User::factory()->create();
+
+        ExceptionRecord::factory()->count(5)->create([
+            'app_id' => 'agg_app', 'class' => 'App\\LogicException',
+            'handled' => false, 'created_at' => now()->subMinutes(10),
+        ]);
+        ExceptionRecord::factory()->create([
+            'app_id' => 'agg_app', 'class' => 'App\\LogicException',
+            'handled' => true, 'created_at' => now(),
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/exceptions')->json('data'))
+            ->firstWhere('class', 'App\\LogicException');
+
+        $this->assertTrue($row['handled']);
+    }
+
+    /**
+     * Bug fix: the read/write badge must reflect the group's latest occurrence
+     * connection_type, not "any occurrence in the group was a write" — MAX()
+     * on text picks 'write' > 'read' lexicographically regardless of which is
+     * more recent or more common.
+     */
+    public function test_queries_aggregate_rw_reflects_latest_occurrence_not_any_write(): void
+    {
+        $user = User::factory()->create();
+
+        QueryRecord::factory()->count(5)->create([
+            'app_id' => 'agg_app', 'sql_query' => 'select * from orders',
+            'group_hash' => 'gh-orders', 'connection_type' => 'read',
+            'created_at' => now()->subMinutes(10),
+        ]);
+        // The one write is not the latest occurrence.
+        QueryRecord::factory()->create([
+            'app_id' => 'agg_app', 'sql_query' => 'select * from orders',
+            'group_hash' => 'gh-orders', 'connection_type' => 'write',
+            'created_at' => now()->subMinutes(20),
+        ]);
+        QueryRecord::factory()->create([
+            'app_id' => 'agg_app', 'sql_query' => 'select * from orders',
+            'group_hash' => 'gh-orders', 'connection_type' => 'read',
+            'created_at' => now(),
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/queries')->json('data'))
+            ->firstWhere('group_hash', 'gh-orders');
+
+        $this->assertSame(7, $row['total']);
+        $this->assertSame('read', $row['rw']);
+    }
+
+    /**
      * FINDING #8: the bespoke users aggregate honors ?sort= against its
      * sortable whitelist rather than always sorting by -requests.
      */

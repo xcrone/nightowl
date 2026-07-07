@@ -48,8 +48,17 @@ const filteredTeams = computed(() => {
 
 const flatApps = computed(() => filteredTeams.value.flatMap((t) => t.apps ?? []))
 
-function errorRateBadge(rate) {
-  const n = Number(rate ?? 0)
+// Minimum requests in the 1h health window before the "% err" badge is
+// allowed to alarm (yellow/red) — mirrors
+// ListApps::MIN_SAMPLE_FOR_ERROR_BADGE. Below this, error_rate (a 5xx-only
+// rate, see the api) is too noisy a sample to color-code — e.g. a single
+// request that happens to error would otherwise read as "100% err" for an
+// app that's actually healthy.
+const MIN_SAMPLE_FOR_ERROR_BADGE = 20
+
+function errorRateBadge(appItem) {
+  if (Number(appItem.request_count ?? 0) < MIN_SAMPLE_FOR_ERROR_BADGE) return BADGE.gray
+  const n = Number(appItem.error_rate ?? 0)
   if (n >= 5) return BADGE.red
   if (n >= 1) return BADGE.yellow
   return BADGE.green
@@ -401,8 +410,12 @@ async function deleteApp(team, appItem) {
                       {{ appItem.db_connection }}
                     </p>
                     <div class="mb-3 flex flex-wrap gap-1.5">
-                      <span class="rounded px-2 py-0.5 text-xs font-medium" :class="errorRateBadge(appItem.error_rate)">
-                        {{ Number(appItem.error_rate ?? 0).toFixed(2) }}% err
+                      <span
+                        class="rounded px-2 py-0.5 text-xs font-medium"
+                        :class="errorRateBadge(appItem)"
+                        title="Server error rate (5xx), last 1h"
+                      >
+                        {{ Number(appItem.error_rate ?? 0).toFixed(2) }}% err (1h)
                       </span>
                       <span class="rounded px-2 py-0.5 text-xs font-medium" :class="appItem.count_5xx > 0 ? BADGE.red : BADGE.gray">
                         {{ appItem.count_5xx ?? 0 }} 5xx
@@ -445,7 +458,12 @@ async function deleteApp(team, appItem) {
             </div>
             <p class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500" :title="appItem.db_connection">{{ appItem.db_connection }}</p>
             <div class="mb-3 flex flex-wrap gap-1.5">
-              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="errorRateBadge(appItem.error_rate)">{{ Number(appItem.error_rate ?? 0).toFixed(2) }}% err</span>
+              <span
+                class="rounded px-2 py-0.5 text-xs font-medium"
+                :class="errorRateBadge(appItem)"
+                title="Server error rate (5xx), last 1h"
+                >{{ Number(appItem.error_rate ?? 0).toFixed(2) }}% err (1h)</span
+              >
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="appItem.count_5xx > 0 ? BADGE.red : BADGE.gray">{{ appItem.count_5xx ?? 0 }} 5xx</span>
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="appItem.exceptions > 0 ? BADGE.yellow : BADGE.gray">{{ appItem.exceptions ?? 0 }} exc</span>
             </div>

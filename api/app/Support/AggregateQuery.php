@@ -31,9 +31,28 @@ class AggregateQuery
             }
             // 'extra' may be a plain list (col) or a map (alias => col) so the
             // emitted row field can be renamed (e.g. execution_source -> source).
+            // The *latest* occurrence in the group wins (ordered by created_at,
+            // then id to break ties) — matching the representative-row pattern
+            // ShowAggregateDetail::meta() and Exceptions\ShowExceptionGroup
+            // already use for a group's carried-through fields. MAX() used to be
+            // used here, but MAX() is an accident of SQL semantics, not a
+            // meaningful pick: MAX(connection_type) silently reports "write" for
+            // a group that's mostly reads (lexicographic 'write' > 'read'), and
+            // the equivalent MAX() on a boolean reports "true" (handled) for a
+            // group that's mostly unhandled (any-true wins) — see queries.rw and
+            // exceptions.representative_bool.
             foreach ($config['extra'] ?? [] as $alias => $col) {
                 $as = is_int($alias) ? $col : $alias;
-                $expr[] = "MAX({$col}) as {$as}";
+                $expr[] = self::latestValueSql($col, $as);
+            }
+            // Boolean flag columns that also feed a same-named 'count_buckets'
+            // SUM (e.g. exceptions' handled/unhandled) can't reuse that alias
+            // for a representative value without colliding in the SELECT list,
+            // so they're computed under an internal alias here and promoted
+            // (overwriting the SUM's alias) by normalizeRow().
+            foreach ($config['representative_bool'] ?? [] as $alias => $col) {
+                $as = is_int($alias) ? $col : $alias;
+                $expr[] = '(array_agg((CASE WHEN '.$col.' THEN 1 ELSE 0 END) order by created_at desc, id desc))[1]::int as '.self::representativeAlias($as);
             }
             foreach ($config['collect_distinct'] ?? [] as $alias => $col) {
                 $expr[] = "string_agg(DISTINCT {$col}::text, ',') as {$alias}";
@@ -61,6 +80,24 @@ class AggregateQuery
         }
 
         return array_map(fn ($e) => DB::raw($e), $expr);
+    }
+
+    /**
+     * SQL for "this column's value on the group's latest row" — an
+     * array_agg(...ORDER BY...)[1], since Postgres has no first_value()
+     * aggregate (only the windowed one, which needs a subquery to use
+     * alongside a plain GROUP BY). Ties on created_at break on id, mirroring
+     * ShowAggregateDetail/ShowExceptionGroup's `latest('created_at')->latest('id')`.
+     */
+    private static function latestValueSql(string $col, string $as): string
+    {
+        return "(array_agg({$col} order by created_at desc, id desc))[1] as {$as}";
+    }
+
+    /** Internal SELECT alias for a 'representative_bool' column pre-promotion (see normalizeRow). */
+    private static function representativeAlias(string $as): string
+    {
+        return "__repr_{$as}";
     }
 
     /**
@@ -171,6 +208,18 @@ class AggregateQuery
         foreach (array_keys($config['count_buckets'] ?? []) as $alias) {
             if (array_key_exists($alias, $row)) {
                 $row[$alias] = (int) $row[$alias];
+            }
+        }
+        // Promote each 'representative_bool' internal column over its
+        // same-named 'count_buckets' SUM (e.g. exceptions' handled/unhandled
+        // counts) — the group's badge/flag needs the latest occurrence's
+        // actual value, not "was any occurrence in the group true".
+        foreach ($config['representative_bool'] ?? [] as $alias => $col) {
+            $as = is_int($alias) ? $col : $alias;
+            $key = self::representativeAlias($as);
+            if (array_key_exists($key, $row)) {
+                $row[$as] = (bool) $row[$key];
+                unset($row[$key]);
             }
         }
         foreach (array_keys($config['collect_distinct'] ?? []) as $alias) {

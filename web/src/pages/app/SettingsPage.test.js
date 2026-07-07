@@ -85,6 +85,14 @@ describe('SettingsPage', () => {
     expect(wrapper.text()).toContain("won't be shown again")
   })
 
+  it('does not claim changes are disabled — Thresholds/Issues saves actually persist', async () => {
+    const wrapper = await mountPage()
+    // The old blanket banner falsely claimed every setting was read-only even
+    // though Thresholds/Issues saves genuinely hit the API and persist.
+    expect(wrapper.text()).not.toContain('Read-only demo — explore every setting; changes are disabled.')
+    expect(wrapper.text()).not.toContain('changes are disabled')
+  })
+
   describe('Thresholds tab', () => {
     it('lists every duration-threshold resource type', async () => {
       const wrapper = await mountPage()
@@ -125,6 +133,16 @@ describe('SettingsPage', () => {
         { value: '1000' },
       )
     })
+
+    it('surfaces a save error instead of swallowing it silently', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Thresholds')
+      api.put.mockRejectedValueOnce({ response: { data: { message: 'Threshold must be positive.' } } })
+      const requestsRow = wrapper.findAll('li').find((li) => li.text().startsWith('Routes'))
+      await requestsRow.findAll('button').find((b) => b.text() === 'Save').trigger('click')
+      await flushPromises()
+      expect(requestsRow.text()).toContain('Threshold must be positive.')
+    })
   })
 
   describe('Issues tab', () => {
@@ -141,6 +159,15 @@ describe('SettingsPage', () => {
         '/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE/settings/issues.auto_resolve_days',
         { value: '14' },
       )
+    })
+
+    it('surfaces a save error instead of swallowing it silently', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Issues')
+      api.put.mockRejectedValueOnce({ response: { data: { message: 'Could not update auto-resolve window.' } } })
+      await wrapper.findAll('button').find((b) => b.text() === 'Save').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Could not update auto-resolve window.')
     })
   })
 
@@ -161,11 +188,14 @@ describe('SettingsPage', () => {
   })
 
   describe('Danger Zone tab', () => {
-    it('keeps the disabled destructive actions', async () => {
+    it('keeps the disabled destructive actions and its own accurate notice', async () => {
       const wrapper = await mountPage()
       await clickTab(wrapper, 'Danger Zone')
       const transfer = wrapper.findAll('button').find((b) => b.text() === 'Transfer app')
+      const destroy = wrapper.findAll('button').find((b) => b.text() === 'Delete app')
       expect(transfer.attributes('disabled')).toBeDefined()
+      expect(destroy.attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('Destructive actions are disabled in this read-only demo.')
     })
   })
 })

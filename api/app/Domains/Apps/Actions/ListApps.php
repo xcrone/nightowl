@@ -62,6 +62,16 @@ class ListApps
         ]);
     }
 
+    /**
+     * Minimum request volume in the health window before `error_rate` is
+     * trustworthy enough to drive an alarming badge — below this, a single
+     * stray request can swing the percentage arbitrarily (e.g. 1 request
+     * that happens to 404 would otherwise read as "100% err"). The frontend
+     * uses `request_count` to fall back to a neutral badge when this isn't
+     * met (web/src/pages/OrgDashboard.vue).
+     */
+    private const MIN_SAMPLE_FOR_ERROR_BADGE = 20;
+
     /** One app's health card payload over the last 1h window (docs/api-contract.md). */
     private function health(App $app): array
     {
@@ -69,7 +79,7 @@ class ListApps
         $appId = $app->app_id;
 
         $reqTotal = RequestRecord::query()->forApp($appId)->where('created_at', '>=', $since)->count();
-        $req4xx5xx = RequestRecord::query()->forApp($appId)->where('created_at', '>=', $since)->where('status_code', '>=', 400)->count();
+        $count4xx = RequestRecord::query()->forApp($appId)->where('created_at', '>=', $since)->whereBetween('status_code', [400, 499])->count();
         $count5xx = RequestRecord::query()->forApp($appId)->where('created_at', '>=', $since)->where('status_code', '>=', 500)->count();
         $exceptions = ExceptionRecord::query()->forApp($appId)->where('created_at', '>=', $since)->count();
         $openIssues = Issue::query()->forApp($appId)->where('status', 'open')->count();
@@ -81,8 +91,16 @@ class ListApps
             'app_id' => $appId,
             'name' => $app->name,
             'db_connection' => $app->db_connection,
-            'error_rate' => $reqTotal > 0 ? round($req4xx5xx / $reqTotal * 100, 1) : 0.0,
+            // Server-error rate only (status >= 500) — ordinary client
+            // errors (404/401/429/...) are NOT counted here, they're
+            // reported separately via count_4xx. Previously this lumped
+            // every status >= 400 together, so a single stray 404 in the
+            // 1h window could read as "100% err" for an otherwise healthy
+            // app (see the org-dashboard "% err" badge).
+            'error_rate' => $reqTotal > 0 ? round($count5xx / $reqTotal * 100, 1) : 0.0,
+            'count_4xx' => $count4xx,
             'count_5xx' => $count5xx,
+            'request_count' => $reqTotal,
             'exceptions' => $exceptions,
             'open_issues' => $openIssues,
             'monitoring' => $connected ? 'connected' : 'disconnected',
