@@ -31,7 +31,6 @@ const currentApp = {
   app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE',
   name: 'Northwind Web',
   description: 'The Northwind storefront',
-  db_connection: 'pg://northwind',
   environments: { production: '#10b981', staging: '#f59e0b' },
 }
 
@@ -96,11 +95,11 @@ describe('SettingsPage', () => {
     const dialog = wrapper.find('[role="dialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('Edit app')
-    // Prefilled from the already-loaded app record (name/description/db_connection).
+    // Prefilled from the already-loaded app record (name/description).
     expect(wrapper.find('[data-test="app-modal-name"]').element.value).toBe('Northwind Web')
 
     api.put.mockResolvedValueOnce({
-      data: { app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE', name: 'Northwind Renamed', description: 'The Northwind storefront', db_connection: 'pg://northwind' },
+      data: { app_id: '3FoNKDbo7D5S9MGhLx9qybejLCE', name: 'Northwind Renamed', description: 'The Northwind storefront' },
     })
     api.get.mockImplementation((url) => {
       if (url.includes('/alert-channels')) return Promise.resolve({ data: { data: [] } })
@@ -115,7 +114,6 @@ describe('SettingsPage', () => {
     expect(api.put).toHaveBeenCalledWith('/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE', {
       name: 'Northwind Renamed',
       description: 'The Northwind storefront',
-      db_connection: 'pg://northwind',
     })
     // modal closes and the page header reflects the rename
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

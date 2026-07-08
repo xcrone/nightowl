@@ -21,8 +21,8 @@ const teams = [
     name: 'Delta Payments',
     apps_count: 2,
     apps: [
-      { app_id: 'a1', name: 'Delta API', db_connection: 'ep-delta:5432/d', error_rate: 12.3, count_5xx: 4, exceptions: 7, open_issues: 1, monitoring: 'connected', last_report_at: new Date().toISOString(), alerts: 1 },
-      { app_id: 'a2', name: 'Delta Web', db_connection: 'ep-web:5432/w', error_rate: 0.09, count_5xx: 0, exceptions: 0, open_issues: 0, monitoring: 'disconnected', last_report_at: new Date().toISOString(), alerts: 0 },
+      { app_id: 'a1', name: 'Delta API', error_rate: 12.3, count_5xx: 4, exceptions: 7, open_issues: 1, monitoring: 'connected', last_report_at: new Date().toISOString(), alerts: 1 },
+      { app_id: 'a2', name: 'Delta Web', error_rate: 0.09, count_5xx: 0, exceptions: 0, open_issues: 0, monitoring: 'disconnected', last_report_at: new Date().toISOString(), alerts: 0 },
     ],
   },
   {
@@ -31,7 +31,7 @@ const teams = [
     name: 'Northwind Traders',
     apps_count: 1,
     apps: [
-      { app_id: 'b1', name: 'Northwind API', db_connection: 'ep-nw:5432/n', error_rate: 4, count_5xx: 1, exceptions: 2, open_issues: 0, monitoring: 'connected', last_report_at: new Date().toISOString(), alerts: 0 },
+      { app_id: 'b1', name: 'Northwind API', error_rate: 4, count_5xx: 1, exceptions: 2, open_issues: 0, monitoring: 'connected', last_report_at: new Date().toISOString(), alerts: 0 },
     ],
   },
 ]
@@ -147,7 +147,7 @@ describe('OrgDashboard', () => {
     expect(card.text()).toContain('1 issues')
   })
 
-  it("shows an app's description instead of its db_connection when one is set", async () => {
+  it("shows an app's description when one is set", async () => {
     const withDescription = {
       data: {
         org,
@@ -161,12 +161,6 @@ describe('OrgDashboard', () => {
     }
     const { wrapper } = await mountPage({ appsResponse: withDescription })
     expect(wrapper.text()).toContain('Handles checkout and payments.')
-    expect(wrapper.text()).not.toContain('ep-delta:5432/d')
-  })
-
-  it("falls back to db_connection when an app has no description", async () => {
-    const { wrapper } = await mountPage()
-    expect(wrapper.text()).toContain('ep-delta:5432/d')
   })
 
   it('navigates into an app dashboard on card click', async () => {
@@ -218,7 +212,7 @@ describe('OrgDashboard', () => {
   })
 
   it('opens the Add app modal from a team and creates an app', async () => {
-    api.post.mockResolvedValue({ data: { app_id: 'c1', name: 'New App', description: '', db_connection: '' } })
+    api.post.mockResolvedValue({ data: { app_id: 'c1', name: 'New App', description: '' } })
     const { wrapper } = await mountPage()
 
     const addAppButtons = wrapper.findAll('[data-test="add-app"]')
@@ -232,13 +226,12 @@ describe('OrgDashboard', () => {
     expect(api.post).toHaveBeenCalledWith('/api/teams/team-uuid-1/apps', {
       name: 'New App',
       description: '',
-      db_connection: '',
     })
     expect(wrapper.text()).toContain('New App')
   })
 
   it('edits an app via the edit icon', async () => {
-    api.put.mockResolvedValue({ data: { app_id: 'a1', name: 'Delta API Renamed', description: '', db_connection: '' } })
+    api.put.mockResolvedValue({ data: { app_id: 'a1', name: 'Delta API Renamed', description: '' } })
     const { wrapper } = await mountPage()
 
     await wrapper.find('[aria-label="Edit app"]').trigger('click')
@@ -249,7 +242,6 @@ describe('OrgDashboard', () => {
     expect(api.put).toHaveBeenCalledWith('/api/apps/a1', {
       name: 'Delta API Renamed',
       description: '',
-      db_connection: 'ep-delta:5432/d',
     })
   })
 

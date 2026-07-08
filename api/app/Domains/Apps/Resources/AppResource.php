@@ -18,7 +18,6 @@ class AppResource extends JsonResource
             'app_id' => $this->app_id,
             'name' => $this->name,
             'description' => $this->description,
-            'db_connection' => $this->db_connection,
             'environments' => $this->environments ?? [],
         ];
     }

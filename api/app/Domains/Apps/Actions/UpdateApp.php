@@ -32,7 +32,6 @@ class UpdateApp
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'db_connection' => ['nullable', 'string'],
             'environments' => ['nullable', 'array'],
         ];
     }

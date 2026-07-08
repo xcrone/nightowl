@@ -68,7 +68,7 @@ two columns mean in practice and their known scope limits.
 | `StoreTeam` | Creates a `Team` under an `Org`. | `authorize()`: membership. `rules()`: `name` required. |
 | `UpdateTeam` | Renames a `Team`. | `authorize()`: membership on `$team->org`. `rules()`: `name` required. `handle()` still type-hints unused `Org $org` — see the Notes entry below for why that's load-bearing, not just style. |
 | `DestroyTeam` | Deletes a `Team`. | Same authorize as `UpdateTeam`. Refuses (422, `"Delete this team's apps first."`) if it still has apps. Same unused-`Org $org`-parameter note as `UpdateTeam`; same `DB::transaction()` + `lockForUpdate()` + `RefusesCascadeDelete` shape as `DestroyOrg`. |
-| `StoreApp` | Creates an `App` under a `Team`, minting a fresh unique opaque `app_id` and an `agent_token` (`App::generateAgentToken()`, the same `'nwt_'`-prefixed format `Settings\Actions\RegenerateAppToken` issues). Returns `AppResource` (same shape `ShowApp` embeds). | `authorize()`: membership on `$team->org`. `rules()`: `name` required, `description`/`db_connection`/`environments` nullable. |
+| `StoreApp` | Creates an `App` under a `Team`, minting a fresh unique opaque `app_id` and an `agent_token` (`App::generateAgentToken()`, the same `'nwt_'`-prefixed format `Settings\Actions\RegenerateAppToken` issues). Returns `AppResource` (same shape `ShowApp` embeds). | `authorize()`: membership on `$team->org`. `rules()`: `name` required, `description`/`environments` nullable. |
 | `UpdateApp` | Updates an `App`'s display fields, returns `AppResource`. | `authorize()`: membership on `$app->team->org`. `rules()`: `name` sometimes\|required, rest nullable. |
 | `DestroyApp` | Deletes an `App`. | Same authorize as `UpdateApp`. **Does not** cascade-delete the app's telemetry rows in the separate `nightowl_*` tables — different database, owned by `nightowl/agent`, out of scope here. |
 
@@ -104,7 +104,7 @@ isn't the right check for handing off ownership.
   TeamResource($team))->resolve(), [...])`) rather than living on the
   Resource itself. `ShowApp`'s `team` key uses the same Resource without
   the extra keys.
-- `AppResource` — `app_id`, `name`, `description`, `db_connection`,
+- `AppResource` — `app_id`, `name`, `description`,
   `environments`. Shared by `ShowApp` (merged with `team`/`org`, same
   spread-then-extend convention as `TeamResource` above), `StoreApp`, and
   `UpdateApp` — previously each of those three hand-built the same flat

@@ -17,7 +17,7 @@ describe('AppFormModal', () => {
   })
 
   it('openCreate opens a blank "Add app" form and POSTs to the team', async () => {
-    api.post.mockResolvedValue({ data: { app_id: 'a1', name: 'New App', description: '', db_connection: '' } })
+    api.post.mockResolvedValue({ data: { app_id: 'a1', name: 'New App', description: '' } })
     const wrapper = mount(AppFormModal)
     wrapper.vm.openCreate({ uuid: 'team-1', name: 'Delta Payments' })
     await wrapper.vm.$nextTick()
@@ -32,7 +32,6 @@ describe('AppFormModal', () => {
     expect(api.post).toHaveBeenCalledWith('/api/teams/team-1/apps', {
       name: 'New App',
       description: '',
-      db_connection: '',
     })
     expect(wrapper.emitted('saved').at(-1)[0]).toMatchObject({
       mode: 'create',
@@ -44,9 +43,9 @@ describe('AppFormModal', () => {
   })
 
   it('openEdit prefills the form from the given app and PUTs to /api/apps/{id}', async () => {
-    api.put.mockResolvedValue({ data: { app_id: 'a1', name: 'Renamed', description: 'desc', db_connection: 'db://x' } })
+    api.put.mockResolvedValue({ data: { app_id: 'a1', name: 'Renamed', description: 'desc' } })
     const wrapper = mount(AppFormModal)
-    wrapper.vm.openEdit({ app_id: 'a1', name: 'Delta API', description: 'desc', db_connection: 'db://x' })
+    wrapper.vm.openEdit({ app_id: 'a1', name: 'Delta API', description: 'desc' })
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Edit app')
@@ -59,7 +58,6 @@ describe('AppFormModal', () => {
     expect(api.put).toHaveBeenCalledWith('/api/apps/a1', {
       name: 'Renamed',
       description: 'desc',
-      db_connection: 'db://x',
     })
     expect(wrapper.emitted('saved').at(-1)[0]).toMatchObject({ mode: 'edit', app: { name: 'Renamed' } })
   })

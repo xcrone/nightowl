@@ -168,8 +168,7 @@ async function submitAlertChannel() {
 
 // "Edit app" (header, top-right) — the same shared AppFormModal used by
 // OrgDashboard.vue's ✎ icon, not a separate re-implementation. Prefilled
-// from `app.current` (the full app record already loaded by AppShell),
-// since /settings only carries a subset of app fields (no db_connection).
+// from `app.current` (the full app record already loaded by AppShell).
 const appFormModal = ref(null)
 
 function openEditApp() {

@@ -21,7 +21,6 @@ const state = reactive({
   appId: null,
   name: '',
   description: '',
-  db_connection: '',
   error: '',
   saving: false,
 })
@@ -33,7 +32,6 @@ function openCreate(team) {
   state.appId = null
   state.name = ''
   state.description = ''
-  state.db_connection = ''
   state.error = ''
 }
 
@@ -44,7 +42,6 @@ function openEdit(appItem, team = null) {
   state.appId = appItem?.app_id ?? null
   state.name = appItem?.name ?? ''
   state.description = appItem?.description ?? ''
-  state.db_connection = appItem?.db_connection ?? ''
   state.error = ''
 }
 
@@ -62,7 +59,6 @@ async function submit() {
   const payload = {
     name: state.name.trim(),
     description: state.description,
-    db_connection: state.db_connection,
   }
   try {
     const { data } =
@@ -102,14 +98,6 @@ defineExpose({ openCreate, openEdit })
         <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Description</label>
         <input
           v-model="state.description"
-          type="text"
-          class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-        />
-      </div>
-      <div>
-        <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Database connection</label>
-        <input
-          v-model="state.db_connection"
           type="text"
           class="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
         />

@@ -34,7 +34,6 @@ class AppManagementApiTest extends TestCase
         $response = $this->actingAs($user)->postJson("/api/teams/{$team->uuid}/apps", [
             'name' => 'New App',
             'description' => 'A new app',
-            'db_connection' => 'db.local:5432/app',
             'environments' => ['production' => '#22c55e'],
         ]);
 

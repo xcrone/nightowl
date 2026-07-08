@@ -428,9 +428,9 @@ async function deleteApp(team, appItem) {
                     </div>
                     <p
                       class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500"
-                      :title="appItem.description || appItem.db_connection"
+                      :title="appItem.description"
                     >
-                      {{ appItem.description || appItem.db_connection }}
+                      {{ appItem.description }}
                     </p>
                     <div class="mb-3 flex flex-wrap gap-1.5">
                       <span
@@ -483,8 +483,8 @@ async function deleteApp(team, appItem) {
             </div>
             <p
               class="mb-3 truncate text-xs text-gray-400 dark:text-gray-500"
-              :title="appItem.description || appItem.db_connection"
-            >{{ appItem.description || appItem.db_connection }}</p>
+              :title="appItem.description"
+            >{{ appItem.description }}</p>
             <div class="mb-3 flex flex-wrap gap-1.5">
               <span
                 class="rounded px-2 py-0.5 text-xs font-medium"

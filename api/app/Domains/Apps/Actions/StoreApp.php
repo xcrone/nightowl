@@ -38,7 +38,6 @@ class StoreApp
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'db_connection' => ['nullable', 'string'],
             'environments' => ['nullable', 'array'],
         ];
     }

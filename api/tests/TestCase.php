@@ -38,7 +38,6 @@ abstract class TestCase extends BaseTestCase
             'app_id' => $appId ?? 'test_'.Str::random(20),
             'team_id' => $team->id,
             'name' => 'Test App',
-            'db_connection' => 'test.local:5432/test',
             'environments' => ['production' => '#22c55e'],
             'agent_token' => 'nwt_test',
         ]);
