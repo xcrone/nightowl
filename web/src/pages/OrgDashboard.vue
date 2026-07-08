@@ -22,10 +22,36 @@ const router = useRouter()
 
 const ui = reactive({ search: '', view: 'teams', loading: true })
 
+const receivedInvitations = ref([])
+
+async function fetchReceivedInvitations() {
+  const { data } = await api.get('/api/invitations')
+  receivedInvitations.value = data.data
+}
+
 onMounted(async () => {
-  await Promise.allSettled([org.fetchOrgs(), org.fetchOrg()])
+  await Promise.allSettled([org.fetchOrgs(), org.fetchOrg(), fetchReceivedInvitations()])
   ui.loading = false
 })
+
+async function acceptInvitation(invitation) {
+  try {
+    await api.post(`/api/invitations/${invitation.uuid}/accept`)
+    receivedInvitations.value = receivedInvitations.value.filter((i) => i.uuid !== invitation.uuid)
+    await org.fetchOrgs().catch(() => {})
+  } catch {
+    /* best-effort — invitation stays listed if the request failed */
+  }
+}
+
+async function declineInvitation(invitation) {
+  try {
+    await api.post(`/api/invitations/${invitation.uuid}/decline`)
+    receivedInvitations.value = receivedInvitations.value.filter((i) => i.uuid !== invitation.uuid)
+  } catch {
+    /* best-effort — invitation stays listed if the request failed */
+  }
+}
 
 async function onSwitchOrg(event) {
   await org.switchOrg(event.target.value).catch(() => {})
@@ -286,6 +312,39 @@ async function deleteApp(team, appItem) {
             <span class="hidden sm:inline">{{ auth.user?.email ?? 'Account' }}</span>
             <span aria-hidden="true">⎋</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Received invitations -->
+      <div
+        v-if="receivedInvitations.length"
+        data-test="received-invitations"
+        class="space-y-2 rounded-lg border border-primary-300 bg-primary-50 p-4 dark:border-primary-500/40 dark:bg-primary-500/10"
+      >
+        <div
+          v-for="invitation in receivedInvitations"
+          :key="invitation.uuid"
+          class="flex flex-wrap items-center justify-between gap-3 text-sm"
+        >
+          <span class="text-gray-700 dark:text-gray-200">{{ invitation.org.name }} invited you to join.</span>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              data-test="accept-invitation"
+              class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+              @click="acceptInvitation(invitation)"
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              data-test="decline-invitation"
+              class="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+              @click="declineInvitation(invitation)"
+            >
+              Decline
+            </button>
+          </div>
         </div>
       </div>
 

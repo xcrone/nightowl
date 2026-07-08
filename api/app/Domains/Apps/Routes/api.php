@@ -1,12 +1,17 @@
 <?php
 
-use App\Domains\Apps\Actions\AddOrgMember;
+use App\Domains\Apps\Actions\AcceptOrgInvitation;
+use App\Domains\Apps\Actions\CancelOrgInvitation;
+use App\Domains\Apps\Actions\DeclineOrgInvitation;
 use App\Domains\Apps\Actions\DestroyApp;
 use App\Domains\Apps\Actions\DestroyOrg;
 use App\Domains\Apps\Actions\DestroyTeam;
+use App\Domains\Apps\Actions\InviteOrgMember;
 use App\Domains\Apps\Actions\ListApps;
+use App\Domains\Apps\Actions\ListOrgInvitations;
 use App\Domains\Apps\Actions\ListOrgMembers;
 use App\Domains\Apps\Actions\ListOrgs;
+use App\Domains\Apps\Actions\ListReceivedInvitations;
 use App\Domains\Apps\Actions\RemoveOrgMember;
 use App\Domains\Apps\Actions\ShowApp;
 use App\Domains\Apps\Actions\ShowDashboard;
@@ -28,8 +33,13 @@ Route::put('/orgs/{org}', UpdateOrg::class);
 Route::put('/orgs/{org}/owner', TransferOrgOwnership::class);
 Route::delete('/orgs/{org}', DestroyOrg::class);
 Route::get('/orgs/{org}/members', ListOrgMembers::class);
-Route::post('/orgs/{org}/members', AddOrgMember::class);
 Route::delete('/orgs/{org}/members/{user}', RemoveOrgMember::class);
+Route::get('/orgs/{org}/invitations', ListOrgInvitations::class);
+Route::post('/orgs/{org}/invitations', InviteOrgMember::class);
+Route::delete('/orgs/{org}/invitations/{invitation}', CancelOrgInvitation::class);
+Route::get('/invitations', ListReceivedInvitations::class);
+Route::post('/invitations/{invitation}/accept', AcceptOrgInvitation::class);
+Route::post('/invitations/{invitation}/decline', DeclineOrgInvitation::class);
 Route::post('/orgs/{org}/teams', StoreTeam::class);
 Route::put('/orgs/{org}/teams/{team}', UpdateTeam::class);
 Route::delete('/orgs/{org}/teams/{team}', DestroyTeam::class);

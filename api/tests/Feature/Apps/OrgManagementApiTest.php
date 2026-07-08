@@ -10,9 +10,9 @@ use Tests\TestCase;
 
 /**
  * POST /api/orgs, PUT /api/orgs/{org}, DELETE /api/orgs/{org},
- * GET /api/orgs/{org}/members, POST /api/orgs/{org}/members,
- * DELETE /api/orgs/{org}/members/{user} (App\Domains\Apps\Actions\StoreOrg,
- * UpdateOrg, DestroyOrg, ListOrgMembers, AddOrgMember, RemoveOrgMember).
+ * GET /api/orgs/{org}/members, DELETE /api/orgs/{org}/members/{user}
+ * (App\Domains\Apps\Actions\StoreOrg, UpdateOrg, DestroyOrg, ListOrgMembers,
+ * RemoveOrgMember).
  */
 class OrgManagementApiTest extends TestCase
 {
@@ -103,54 +103,6 @@ class OrgManagementApiTest extends TestCase
 
         $this->actingAs($user)->deleteJson("/api/orgs/{$org->uuid}")
             ->assertForbidden();
-    }
-
-    public function test_adds_an_existing_user_as_an_org_member(): void
-    {
-        $user = User::factory()->create();
-        $newMember = User::factory()->create(['email' => 'joiner@example.com']);
-        $org = Org::query()->create(['name' => 'Org', 'account_email' => 'org@example.com']);
-        $org->users()->attach($user);
-
-        $response = $this->actingAs($user)->postJson("/api/orgs/{$org->uuid}/members", [
-            'email' => 'joiner@example.com',
-        ]);
-
-        // AddOrgMember returns the single newly-added member, not the org's
-        // whole member list.
-        $response->assertCreated();
-        $this->assertSame('joiner@example.com', $response->json('email'));
-        $this->assertSame($newMember->uuid, $response->json('uuid'));
-        $this->assertArrayNotHasKey('id', $response->json());
-        $this->assertTrue($org->users()->where('users.id', $newMember->id)->exists());
-    }
-
-    public function test_add_member_rejects_an_email_with_no_account(): void
-    {
-        $user = User::factory()->create();
-        $org = Org::query()->create(['name' => 'Org', 'account_email' => 'org@example.com']);
-        $org->users()->attach($user);
-
-        $response = $this->actingAs($user)->postJson("/api/orgs/{$org->uuid}/members", [
-            'email' => 'nobody@example.com',
-        ]);
-
-        // A well-formed email with no matching account gets a message that
-        // says so, rather than Laravel's default "is invalid" wording, which
-        // reads as a format complaint.
-        $response->assertUnprocessable()->assertJsonValidationErrors(['email']);
-        $this->assertSame('No NightOwl account exists for that email yet — they need to sign up first.', $response->json('errors.email.0'));
-    }
-
-    public function test_add_member_is_forbidden_for_a_non_member(): void
-    {
-        $user = User::factory()->create();
-        $target = User::factory()->create(['email' => 'joiner@example.com']);
-        $org = Org::query()->create(['name' => 'Org', 'account_email' => 'org@example.com']);
-
-        $this->actingAs($user)->postJson("/api/orgs/{$org->uuid}/members", [
-            'email' => 'joiner@example.com',
-        ])->assertForbidden();
     }
 
     public function test_lists_an_orgs_members_for_an_authorized_member(): void

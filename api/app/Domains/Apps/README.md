@@ -42,6 +42,17 @@ opaque `app_id` (`App::getRouteKeyName`), not the integer `id`.
 Actions below, since this was the first batch to actually introduce those
 route params. `App` still binds on its own opaque `app_id`, unaffected.
 
+`OrgInvitation` (`app/Models/OrgInvitation.php`, `org_invitations` table,
+migration `2026_07_08_000000_create_org_invitations_table`) is a new model
+in this domain's shared `app/Models/` namespace: `uuid` (auto-generated on
+create, route key), `org_id` (FK `orgs`, cascade delete), `email` (plain
+string, deliberately **not** a FK to `users` — an invite can target any
+address, matched to a real account only later at accept time), `status`
+(`pending`/`accepted`/`declined`, default `pending`), `invited_by_user_id`
+(nullable FK `users`, null-on-delete), `responded_at` (nullable, cast
+`datetime`). `Org::invitations(): HasMany` was added alongside
+`teams()`/`users()`/`owner()`.
+
 `orgs.owner_id`/`orgs.is_personal` (retrofit migration
 `2026_07_07_120000_add_owner_to_orgs_table`) added an ownership concept on
 top of the flat `org_user` membership pivot: `Org::owner()` (`BelongsTo`
@@ -61,9 +72,14 @@ two columns mean in practice and their known scope limits.
 | `StoreOrg` | Founds a new `Org`, attaches the creator as its first member. | `authorize()` always allows (any authenticated user may found an org). `rules()`: `name` required, `account_email` required email. |
 | `UpdateOrg` | Renames an `Org`/changes its billing contact email. | `authorize()`: membership via `AuthorizesOrgMembership::authorizeOrgMember()`. `rules()`: both fields `sometimes\|required`. |
 | `DestroyOrg` | Deletes an `Org`. | `authorize()`: membership. Refuses (422, `"Delete this org's teams first."`) if it still has teams — won't cascade-wipe teams/apps silently. Runs inside `DB::transaction()` against a `lockForUpdate()`-locked re-fetch of the org row (see the Notes entry below on the TOCTOU fix), using the shared `RefusesCascadeDelete` trait for the "has children" check. |
-| `ListOrgMembers` | The org's current members (`OrgMemberResource::collection`). | `authorize()`: membership. Added so the SPA can load the existing member list on page load instead of only building one up from `AddOrgMember`/`RemoveOrgMember` responses within a session. |
-| `AddOrgMember` | Attaches an **existing** user account to an org by email, returns the single newly-added member (`(new OrgMemberResource($user))->resolve()`, HTTP 201). | `authorize()`: membership. `rules()`: `email` required, must `exists:users,email` — there is no invite-by-email infrastructure, so this cannot onboard a brand-new account, only grant an existing one access. Previously returned the org's *entire* member list re-queried/re-serialized after every add; changed to return just the added member (see Notes). |
+| `ListOrgMembers` | The org's current members (`OrgMemberResource::collection`). | `authorize()`: membership. Added so the SPA can load the existing member list on page load instead of only building one up from membership-mutating Actions' responses within a session. |
 | `RemoveOrgMember` | Detaches a member from an org. | `authorize()`: membership. `{user}` route param binds by `uuid` (never the integer id). |
+| `InviteOrgMember` | Invites someone to join an org by email — creates a `pending` `OrgInvitation` and sends `OrgInvitationReceived` to that email as an on-demand notification (`Notification::route('mail', $email)->notify(...)`, no `User` account required). Returns the created invitation (`(new OrgInvitationResource($invitation))->resolve()`, HTTP 201). | `authorize()`: membership. `rules()`: `email` required/`email`, deliberately **no** `exists:users,email` — unlike the old `AddOrgMember`, an unregistered email is invitable; it's matched to a real account later, at accept time, by email. `handle()` 422s (`ValidationException` on `email`) if the email already belongs to a member of the org, or if a `pending` invitation for that org+email already exists — no duplicate pendings. |
+| `ListOrgInvitations` | The org's currently-pending invitations (`OrgInvitationResource::collection`, `where('status', 'pending')`). Accepted/declined invitations are historical, not actionable, so excluded. | `authorize()`: membership. |
+| `CancelOrgInvitation` | Cancels (deletes) a pending invitation. | `authorize()`: membership on `$org`. `{invitation}` route param binds by `uuid`. 422s (`"This invitation has already been responded to."`) if the invitation isn't `pending`; otherwise deletes it and returns 204. |
+| `ListReceivedInvitations` | The pending invitations addressed to the authenticated user's own email, across every org — a cross-org "my invitations" inbox with no `{org}` route param at all. | `authorize()`: any authenticated user (`$request->user() !== null`) — no org-membership check, since there's no org context yet. |
+| `AcceptOrgInvitation` | Accepts an invitation: attaches the authenticated user to `$invitation->org` (`syncWithoutDetaching`) and marks the invitation `accepted` with `responded_at`. Returns the updated invitation, HTTP 200. | `authorize()`: **not** membership — matches the invitation to the *invitee* by email (`$invitation->email === $request->user()->email`), same idiom of reading `{invitation}` off `$request->route('invitation')` as the other Actions. Works whether the invitee registered before or after the invite was sent, since matching is by email, not any pre-existing relation. `handle()` 422s (`"This invitation is no longer pending."`) if the invitation isn't `pending`. |
+| `DeclineOrgInvitation` | Declines an invitation: marks it `declined` with `responded_at`. Never touches the org's membership pivot. Returns the updated invitation, HTTP 200. | Same email-match `authorize()` and not-pending 422 as `AcceptOrgInvitation`. |
 | `TransferOrgOwnership` | Reassigns `$org->owner_id` to another existing member, looked up by email. | `authorize()`: **not** membership — only the *current owner* (`$org->owner_id === $request->user()?->id`), read off `$request->route('org')` same as the other Actions. `rules()`: `email` required, must `exists:users,email`. `handle()` 422s (`ValidationException` on `email`) if `$org->is_personal` (never transferable) or if the target isn't already a member of `$org`. |
 | `StoreTeam` | Creates a `Team` under an `Org`. | `authorize()`: membership. `rules()`: `name` required. |
 | `UpdateTeam` | Renames a `Team`. | `authorize()`: membership on `$team->org`. `rules()`: `name` required. `handle()` still type-hints unused `Org $org` — see the Notes entry below for why that's load-bearing, not just style. |
@@ -72,18 +88,24 @@ two columns mean in practice and their known scope limits.
 | `UpdateApp` | Updates an `App`'s display fields, returns `AppResource`. | `authorize()`: membership on `$app->team->org`. `rules()`: `name` sometimes\|required, rest nullable. |
 | `DestroyApp` | Deletes an `App`. | Same authorize as `UpdateApp`. **Does not** cascade-delete the app's telemetry rows in the separate `nightowl_*` tables — different database, owned by `nightowl/agent`, out of scope here. |
 
-All ten CRUD/membership Actions above (i.e. every one except
-`TransferOrgOwnership`) share one `authorize()` idiom: read the route-bound
-model off `$request->route(...)` (required — `authorize()`/`rules()` run
-before the router's own binding reaches `handle()`), then check org
-membership via `App\Support\AuthorizesOrgMembership`'s
-`authorizeOrgMember(Org $org, ?User $user)` — an indexed
-`$org->users()->whereKey($user->id)->exists()` check rather than loading
-every member row just to call `contains()` on the collection. Mirrors
-`App\Support\AuthorizesAppScope`'s role for the app_id-ownership check used
-elsewhere in Settings/Issues. `TransferOrgOwnership` deliberately does
-**not** use this trait — see its Notes entry below for why plain membership
-isn't the right check for handing off ownership.
+Thirteen of the CRUD/membership/invitation Actions above (`UpdateOrg`,
+`DestroyOrg`, `ListOrgMembers`, `RemoveOrgMember`, `InviteOrgMember`,
+`ListOrgInvitations`, `CancelOrgInvitation`, `StoreTeam`, `UpdateTeam`,
+`DestroyTeam`, `StoreApp`, `UpdateApp`, `DestroyApp`) share one
+`authorize()` idiom: read the route-bound model off `$request->route(...)`
+(required — `authorize()`/`rules()` run before the router's own binding
+reaches `handle()`), then check org membership via
+`App\Support\AuthorizesOrgMembership`'s `authorizeOrgMember(Org $org, ?User
+$user)` — an indexed `$org->users()->whereKey($user->id)->exists()` check
+rather than loading every member row just to call `contains()` on the
+collection. Mirrors `App\Support\AuthorizesAppScope`'s role for the
+app_id-ownership check used elsewhere in Settings/Issues.
+`TransferOrgOwnership` deliberately does **not** use this trait — see its
+Notes entry below for why plain membership isn't the right check for
+handing off ownership. `ListReceivedInvitations`, `AcceptOrgInvitation`,
+and `DeclineOrgInvitation` don't use it either — they have no `{org}` route
+param at all (an invitation is matched to its invitee purely by email; see
+the "invite/accept flow" Notes entry below).
 
 ## Resources
 
@@ -110,9 +132,14 @@ isn't the right check for handing off ownership.
   `UpdateApp` — previously each of those three hand-built the same flat
   array independently.
 - `OrgMemberResource` — `uuid`, `name`, `email` (no `id` — uuid-public-ids:
-  the integer PK never serializes here). Used by `AddOrgMember`'s
-  single-member response and `ListOrgMembers`'s collection so a raw `User`
-  (or collection) is never serialized directly.
+  the integer PK never serializes here). Used by `ListOrgMembers`'s
+  collection so a raw `User` collection is never serialized directly.
+- `OrgInvitationResource` — `uuid`, `email`, `status`, `created_at`,
+  `responded_at`, and (only `whenLoaded('org')`) a nested `org: { uuid,
+  name }` — no `id` (uuid-public-ids). Used by `InviteOrgMember`'s
+  single-invitation response, `ListOrgInvitations`'s and
+  `ListReceivedInvitations`'s collections, and `AcceptOrgInvitation`'s/
+  `DeclineOrgInvitation`'s updated-invitation responses.
 - `ListApps`'s per-app `health()` payload and `ShowDashboard`'s entire
   summary are pure computed aggregates (GROUP BY / window-function
   results), not 1:1 serialized models — no Resource for those, per the
@@ -131,8 +158,13 @@ isn't the right check for handing off ownership.
 | PUT | `/api/orgs/{org}/owner` | `TransferOrgOwnership` | `auth:sanctum` |
 | DELETE | `/api/orgs/{org}` | `DestroyOrg` | `auth:sanctum` |
 | GET | `/api/orgs/{org}/members` | `ListOrgMembers` | `auth:sanctum` |
-| POST | `/api/orgs/{org}/members` | `AddOrgMember` | `auth:sanctum` |
 | DELETE | `/api/orgs/{org}/members/{user}` | `RemoveOrgMember` | `auth:sanctum` |
+| GET | `/api/orgs/{org}/invitations` | `ListOrgInvitations` | `auth:sanctum` |
+| POST | `/api/orgs/{org}/invitations` | `InviteOrgMember` | `auth:sanctum` |
+| DELETE | `/api/orgs/{org}/invitations/{invitation}` | `CancelOrgInvitation` | `auth:sanctum` |
+| GET | `/api/invitations` | `ListReceivedInvitations` | `auth:sanctum` |
+| POST | `/api/invitations/{invitation}/accept` | `AcceptOrgInvitation` | `auth:sanctum` |
+| POST | `/api/invitations/{invitation}/decline` | `DeclineOrgInvitation` | `auth:sanctum` |
 | POST | `/api/orgs/{org}/teams` | `StoreTeam` | `auth:sanctum` |
 | PUT | `/api/orgs/{org}/teams/{team}` | `UpdateTeam` | `auth:sanctum` |
 | DELETE | `/api/orgs/{org}/teams/{team}` | `DestroyTeam` | `auth:sanctum` |
@@ -169,7 +201,7 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
   *transfer* flow), not an oversight — tightening those two Actions to
   respect ownership is a separate, not-yet-scoped follow-up.
 - Full CRUD + membership management batch: `StoreOrg`/`UpdateOrg`/`DestroyOrg`,
-  `AddOrgMember`/`RemoveOrgMember`, `StoreTeam`/`UpdateTeam`/`DestroyTeam`,
+  `RemoveOrgMember`, `StoreTeam`/`UpdateTeam`/`DestroyTeam`,
   `StoreApp`/`UpdateApp`/`DestroyApp` — before this batch the only way any
   `Org`/`Team`/`App`/membership row existed was a manual `OrgSeeder` (since removed;
   `db:seed` now only creates the admin user).
@@ -201,12 +233,25 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
   argument order, it's the mechanism that makes the route bindings exist in
   the first place; the unused `Org $org` parameter is load-bearing, not
   cosmetic.
-- `AddOrgMember` has no email-invite infrastructure behind it — it can only
-  attach an *existing* user account (looked up by email) to an org, never
-  create one. Onboarding a brand-new teammate still requires them to register
-  first (`App\Domains\Auth\Actions\Register`) before anyone can add them.
-  Its response is a single member object, not a list — a follow-up on the web
-  side updates the SPA to match (`{ uuid, name, email }`, HTTP 201).
+- **Invite/accept-or-decline flow replaces instant-add:** the old
+  `AddOrgMember` (`POST /api/orgs/{org}/members`) attached an *existing*
+  user account to an org instantly, with no consent step from the invitee
+  and no way to invite someone who hadn't registered yet. It's been
+  removed and replaced by `InviteOrgMember` + `ListOrgInvitations` +
+  `CancelOrgInvitation` (org-member side) and `ListReceivedInvitations` +
+  `AcceptOrgInvitation` + `DeclineOrgInvitation` (invitee side), backed by
+  the new `OrgInvitation` model/`org_invitations` table. Two behavior
+  changes this motivated: (1) an invitee's email is deliberately *not*
+  required to already have a `User` account (`InviteOrgMember::rules()`
+  has no `exists:users,email`) — the invite is matched to a real account
+  only later, at accept time, by comparing `email` against the accepting
+  user's own email, so someone can be invited before they've ever
+  registered (see `test_accepts_an_invitation_after_registering_after_the_invite_was_sent`);
+  (2) joining now requires the invitee's own explicit accept — an org
+  member can no longer unilaterally grant someone else org access, only
+  propose it. `OrgInvitationReceived` (a plain, non-queued `Notification`)
+  is sent on-demand (`Notification::route('mail', $email)->notify(...)`)
+  so the invitee doesn't need a `User` row to be notified.
 - Code-review follow-up (post-CRUD-batch): `DestroyOrg`/`DestroyTeam`'s
   original "check `exists()`, then `delete()`" was a TOCTOU race — a
   concurrent insert of a new child row between the check and the delete
@@ -219,7 +264,7 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
   `App\Domains\Apps\Support\RefusesCascadeDelete` (a trait used by both
   Actions) instead of being duplicated. Same pass added `ListOrgMembers`
   (there was previously no way to fetch an org's existing member list —
-  only `AddOrgMember`/`RemoveOrgMember` responses within a session) and
+  only membership-mutating Actions' responses within a session) and
   dropped the leaked `id` key from `OrgMemberResource`.
 - `ListApps::handle()` used to be `Org::query()->firstOrFail()` — literally
   the first `Org` row in the whole table, regardless of who was asking. That
@@ -233,8 +278,8 @@ beyond the telemetry models' own `forApp` scope and `App\Support\Period`.
   Org::query()->firstOrFail()`, mirroring `ListOrgs`'s membership lookup +
   no-membership fallback at the time. `ListApps`'s non-app-scoped nature (it
   still only supports one `Org` per user, not a picker across several) is a
-  separate, remaining limitation — see the `StoreOrg`/`AddOrgMember` note
-  above for why a second `Org` still isn't reachable from the UI.
+  separate, remaining limitation — see the `StoreOrg`/`InviteOrgMember`
+  notes above for why a second `Org` still isn't reachable from the UI.
   New test: `AppApiTest::test_apps_endpoint_returns_the_current_users_own_org_not_the_first_one_in_the_table`.
 - **Cross-tenant leak fix (post-CRUD-batch):** the `Org::query()->firstOrFail()`/
   "fall back to every org" no-membership fallbacks described in the two notes

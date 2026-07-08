@@ -47,10 +47,11 @@ function makeRouter() {
   })
 }
 
-async function mountPage({ orgsList = [org], appsResponse } = {}) {
+async function mountPage({ orgsList = [org], appsResponse, receivedInvitations = [] } = {}) {
   api.get.mockImplementation((url) => {
     if (url === '/api/orgs') return Promise.resolve({ data: { data: orgsList } })
     if (url === '/api/apps') return Promise.resolve(appsResponse ?? { data: { org, teams } })
+    if (url === '/api/invitations') return Promise.resolve({ data: { data: receivedInvitations } })
     return Promise.reject(new Error(`unexpected GET ${url}`))
   })
   const router = makeRouter()
@@ -403,6 +404,61 @@ describe('OrgDashboard', () => {
 
       expect(api.delete).not.toHaveBeenCalled()
       vi.unstubAllGlobals()
+    })
+  })
+
+  describe('received invitations', () => {
+    const invitation = {
+      uuid: 'inv-1',
+      email: 'z@x.c',
+      status: 'pending',
+      created_at: '2026-01-01T00:00:00Z',
+      responded_at: null,
+      org: { uuid: 'org-uuid-9', name: 'Northwind Traders Org' },
+    }
+
+    it('shows a banner for a pending invitation addressed to me', async () => {
+      const { wrapper } = await mountPage({ receivedInvitations: [invitation] })
+
+      expect(api.get).toHaveBeenCalledWith('/api/invitations')
+      const banner = wrapper.find('[data-test="received-invitations"]')
+      expect(banner.exists()).toBe(true)
+      expect(banner.text()).toContain('Northwind Traders Org')
+      expect(banner.text()).toContain('invited')
+    })
+
+    it('shows no banner when there are no pending invitations', async () => {
+      const { wrapper } = await mountPage()
+
+      expect(wrapper.find('[data-test="received-invitations"]').exists()).toBe(false)
+    })
+
+    it('accepts an invitation and refreshes the org list', async () => {
+      api.post.mockResolvedValue({
+        data: { uuid: 'inv-1', email: 'z@x.c', status: 'accepted', responded_at: '2026-01-02T00:00:00Z', org: invitation.org },
+      })
+      const { wrapper } = await mountPage({ receivedInvitations: [invitation] })
+
+      await wrapper.find('[data-test="accept-invitation"]').trigger('click')
+      await flushPromises()
+
+      expect(api.post).toHaveBeenCalledWith('/api/invitations/inv-1/accept')
+      expect(wrapper.find('[data-test="received-invitations"]').exists()).toBe(false)
+      expect(api.get.mock.calls.filter(([url]) => url === '/api/orgs').length).toBeGreaterThan(1)
+    })
+
+    it('declines an invitation', async () => {
+      api.post.mockResolvedValue({
+        data: { uuid: 'inv-1', email: 'z@x.c', status: 'declined', responded_at: '2026-01-02T00:00:00Z', org: invitation.org },
+      })
+      const { wrapper } = await mountPage({ receivedInvitations: [invitation] })
+
+      await wrapper.find('[data-test="decline-invitation"]').trigger('click')
+      await flushPromises()
+
+      expect(api.post).toHaveBeenCalledWith('/api/invitations/inv-1/decline')
+      expect(wrapper.find('[data-test="received-invitations"]').exists()).toBe(false)
+      expect(api.get.mock.calls.filter(([url]) => url === '/api/orgs').length).toBe(1)
     })
   })
 })

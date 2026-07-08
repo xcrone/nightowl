@@ -49,6 +49,7 @@ relocate" rule.
 | `ShowAppSettings` | The settings KV map merged with `app_id`/`name`/`description`/`environments`/masked `agent_token`/current template summary. The masked token is serialized under the `agent_token` key (matching `docs/api-contract.md` and `RegenerateAppToken`'s plaintext response key — the mask is what distinguishes the read from the one-shot regenerate). | `authorize()` always allows. No rules — pure read. |
 | `ShowAppStorage` | The on-disk footprint of the `nightowl_*` telemetry tables, scoped to `{app}` (docs' "on-disk footprint of the app's NightOwl telemetry tables"). Returns `{ tables: [{ name, bytes, rows }], total_bytes }`, sorted largest-first (by the app's own bytes). Physical table *sizes* (`pg_total_relation_size`, incl. indexes + TOAST) are inherently shared storage — Postgres doesn't segment a table's pages per row value — so each table's `bytes` is this app's proportional share (`table bytes × this app's row count ÷ the table's total row count`, real `COUNT(*)`s rather than `pg_class.reltuples`, which is frequently stale/`-1` on lightly-analyzed tables). `rows` is always the exact `COUNT(*) WHERE app_id = ?` (or, for the two tables with no `app_id` of their own — `nightowl_issue_activity`/`nightowl_issue_comments` — a join to `nightowl_issues.app_id`). `nightowl_reports` has no per-app relation at all (a whole-deployment snapshot) and is excluded from the report entirely rather than misreported as "0" or "everyone's". Previously this reported whole-database totals for every table regardless of `{app}` — a brand-new app with zero telemetry showed other apps' row counts (e.g. `nightowl_logs 25`) since it never filtered by `app_id`; fixed to be properly app-scoped. | `authorize()` always allows. No rules — pure read. |
 | `UpdateAppSetting` | Upserts one `Setting` row (`app_id`+`key` unique). | `authorize()` 422s if `{key}` is one of the reserved computed keys (`app_id`, `name`, `description`, `environments`, `agent_token`, `template`) — these live on the settings payload but aren't genuine settings. `rules()`: `value` required string. |
+| `DestroyAppSetting` | Deletes one `Setting` row scoped to `{app}`+`{key}` (`Setting::forApp()->where('key', ...)->delete()`), returning `204 No Content`. Idempotent: deleting a key that was never set (or already deleted) is a no-op 204, not a 404. | `authorize()` 422s on the same reserved-key list as `UpdateAppSetting` — both Actions share the check via the new `GuardsReservedSettingKeys` trait (`Actions/Concerns/GuardsReservedSettingKeys.php`, extracted from `UpdateAppSetting`'s previously-private `RESERVED_KEYS` constant). No rules — DELETE has no body. |
 | `UpdateAppEnvironment` | Sets/adds one environment's color in `App.environments`. | `authorize()` always allows. `rules()`: `color` required string, max 9 chars (`#RRGGBBAA`). |
 | `RegenerateAppToken` | Issues a fresh `nwt_`-prefixed agent token, returned in plaintext once. | `authorize()` always allows. No rules. |
 | `ListAppTemplates` | This app's `Template`s, most recently synced first. | `authorize()` always allows. No rules. |
@@ -109,6 +110,7 @@ batch — see `app/Domains/Issues/README.md`.
 | GET | `/api/apps/{app}/settings` | `ShowAppSettings` | `auth:sanctum` (root aggregator group) |
 | GET | `/api/apps/{app}/settings/storage` | `ShowAppStorage` | `auth:sanctum` |
 | PUT | `/api/apps/{app}/settings/{key}` | `UpdateAppSetting` | `auth:sanctum` |
+| DELETE | `/api/apps/{app}/settings/{key}` | `DestroyAppSetting` | `auth:sanctum` |
 | PUT | `/api/apps/{app}/environments/{name}` | `UpdateAppEnvironment` | `auth:sanctum` |
 | POST | `/api/apps/{app}/token/regenerate` | `RegenerateAppToken` | `auth:sanctum` |
 | GET | `/api/apps/{app}/templates` | `ListAppTemplates` | `auth:sanctum` |
@@ -133,6 +135,14 @@ beyond `App\Support\AuthorizesAppScope`.
 
 ## Notes
 
+- **`DestroyAppSetting` added**: settings previously had no way to remove a
+  key once set (only upsert via `UpdateAppSetting`). Added the DELETE
+  endpoint plus `test_deletes_a_setting`,
+  `test_deleting_a_reserved_setting_key_is_rejected`, and
+  `test_delete_is_idempotent_for_a_key_that_was_never_set` to
+  `tests/Feature/Settings/AppSettingsApiTest.php`. The reserved-key guard
+  used by both `UpdateAppSetting` and `DestroyAppSetting` was pulled out
+  into the `GuardsReservedSettingKeys` trait rather than duplicated.
 - **Coverage gap fixed** (per the migration plan's explicit call-out):
   `UpdateAlertChannel`/`DestroyAlertChannel` had zero direct test coverage
   before this migration (only store/index/toggle were asserted). Added

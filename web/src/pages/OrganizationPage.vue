@@ -17,7 +17,7 @@ const ui = reactive({ loading: true })
 onMounted(async () => {
   try {
     if (!org.org) await org.fetchOrg().catch(() => {})
-    await fetchMembers().catch(() => {})
+    await Promise.all([fetchMembers().catch(() => {}), fetchPendingInvitations().catch(() => {})])
   } finally {
     ui.loading = false
   }
@@ -75,34 +75,11 @@ async function saveOrg() {
 
 // --- Members --------------------------------------------------------------
 const members = ref([])
-const newMemberEmail = ref('')
-const memberError = ref('')
-const addingMember = ref(false)
 
 async function fetchMembers() {
   if (!org.org?.uuid) return
   const { data } = await api.get(`/api/orgs/${org.org.uuid}/members`)
   members.value = data.data
-}
-
-async function addMember() {
-  if (!org.org?.uuid || !newMemberEmail.value.trim()) return
-  memberError.value = ''
-  addingMember.value = true
-  try {
-    const { data } = await api.post(`/api/orgs/${org.org.uuid}/members`, {
-      email: newMemberEmail.value.trim(),
-    })
-    members.value.push(data)
-    newMemberEmail.value = ''
-  } catch (e) {
-    memberError.value =
-      e?.response?.data?.errors?.email?.[0] ??
-      e?.response?.data?.message ??
-      "That email hasn't signed up for NightOwl yet."
-  } finally {
-    addingMember.value = false
-  }
 }
 
 async function removeMember(member) {
@@ -113,6 +90,46 @@ async function removeMember(member) {
     members.value = members.value.filter((m) => m.uuid !== member.uuid)
   } catch {
     /* best-effort — member stays listed if the request failed */
+  }
+}
+
+// --- Pending invitations ---------------------------------------------------
+const pendingInvitations = ref([])
+const newMemberEmail = ref('')
+const memberError = ref('')
+const sendingInvite = ref(false)
+
+async function fetchPendingInvitations() {
+  if (!org.org?.uuid) return
+  const { data } = await api.get(`/api/orgs/${org.org.uuid}/invitations`)
+  pendingInvitations.value = data.data
+}
+
+async function addMember() {
+  if (!org.org?.uuid || !newMemberEmail.value.trim()) return
+  memberError.value = ''
+  sendingInvite.value = true
+  try {
+    const { data } = await api.post(`/api/orgs/${org.org.uuid}/invitations`, {
+      email: newMemberEmail.value.trim(),
+    })
+    pendingInvitations.value.push(data)
+    newMemberEmail.value = ''
+  } catch (e) {
+    memberError.value = e?.response?.data?.errors?.email?.[0] ?? e?.response?.data?.message ?? 'Could not send invite.'
+  } finally {
+    sendingInvite.value = false
+  }
+}
+
+async function cancelInvitation(invitation) {
+  if (!org.org?.uuid) return
+  if (!window.confirm(`Cancel the invitation to ${invitation.email}?`)) return
+  try {
+    await api.delete(`/api/orgs/${org.org.uuid}/invitations/${invitation.uuid}`)
+    pendingInvitations.value = pendingInvitations.value.filter((i) => i.uuid !== invitation.uuid)
+  } catch {
+    /* best-effort — invitation stays listed if the request failed */
   }
 }
 </script>
@@ -243,14 +260,40 @@ async function removeMember(member) {
           </div>
           <button
             type="button"
-            data-test="add-member"
+            data-test="send-invite"
             class="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-            :disabled="addingMember"
+            :disabled="sendingInvite"
             @click="addMember"
           >
-            {{ addingMember ? 'Adding…' : 'Add member' }}
+            {{ sendingInvite ? 'Sending…' : 'Send invite' }}
           </button>
         </div>
+      </StatPanel>
+
+      <!-- Pending invitations -->
+      <StatPanel title="Pending invitations">
+        <ul class="divide-y divide-gray-100 dark:divide-gray-800">
+          <li v-if="!pendingInvitations.length" class="py-2 text-sm text-gray-400 dark:text-gray-500">
+            No pending invitations.
+          </li>
+          <li
+            v-for="invitation in pendingInvitations"
+            :key="invitation.uuid"
+            class="flex items-center justify-between gap-3 py-2 text-sm"
+          >
+            <span>
+              <span class="font-medium text-gray-900 dark:text-gray-100">{{ invitation.email }}</span>
+            </span>
+            <button
+              type="button"
+              data-test="cancel-invitation"
+              class="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+              @click="cancelInvitation(invitation)"
+            >
+              Cancel
+            </button>
+          </li>
+        </ul>
       </StatPanel>
       </template>
     </div>

@@ -38,6 +38,12 @@ class Org extends Model
         return $this->belongsToMany(User::class);
     }
 
+    /** Pending/accepted/declined invitations issued for this org. */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(OrgInvitation::class);
+    }
+
     /**
      * The org's owner — never reassigned for a personal (`is_personal`)
      * org, transferable otherwise via TransferOrgOwnership. Nullable:

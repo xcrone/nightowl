@@ -22,9 +22,14 @@ function makeRouter() {
   })
 }
 
-async function mountPage({ existingOrg = org, members = [{ uuid: 'member-1', name: 'Zahir', email: 'z@x.c' }] } = {}) {
+async function mountPage({
+  existingOrg = org,
+  members = [{ uuid: 'member-1', name: 'Zahir', email: 'z@x.c' }],
+  pendingInvitations = [],
+} = {}) {
   api.get.mockImplementation((url) => {
     if (url === `/api/orgs/${org.uuid}/members`) return Promise.resolve({ data: { data: members } })
+    if (url === `/api/orgs/${org.uuid}/invitations`) return Promise.resolve({ data: { data: pendingInvitations } })
     return Promise.reject(new Error(`unexpected GET ${url}`))
   })
   const router = makeRouter()
@@ -71,16 +76,82 @@ describe('OrganizationPage', () => {
     expect(wrapper.text()).toContain('Renamed Org')
   })
 
-  it('adds a member', async () => {
-    api.post.mockResolvedValue({ data: { uuid: 'member-2', name: 'New Member', email: 'new@example.com' } })
+  it('sends an invitation', async () => {
+    api.post.mockResolvedValue({
+      data: {
+        uuid: 'invite-1',
+        email: 'new@example.com',
+        status: 'pending',
+        created_at: '2026-01-01T00:00:00Z',
+        responded_at: null,
+        org: { uuid: org.uuid, name: org.name },
+      },
+    })
     const { wrapper } = await mountPage({ members: [] })
 
     await wrapper.find('[data-test="new-member-email"]').setValue('new@example.com')
-    await wrapper.find('[data-test="add-member"]').trigger('click')
+    await wrapper.find('[data-test="send-invite"]').trigger('click')
     await flushPromises()
 
-    expect(api.post).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/members`, { email: 'new@example.com' })
-    expect(wrapper.text()).toContain('New Member')
+    expect(api.post).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/invitations`, { email: 'new@example.com' })
+    expect(wrapper.text()).toContain('new@example.com')
+    expect(wrapper.text()).not.toContain('Zahir')
+  })
+
+  it('lists pending invitations sent by the org', async () => {
+    const { wrapper } = await mountPage({
+      pendingInvitations: [
+        {
+          uuid: 'invite-2',
+          email: 'pending@example.com',
+          status: 'pending',
+          created_at: '2026-01-01T00:00:00Z',
+          responded_at: null,
+          org: { uuid: org.uuid, name: org.name },
+        },
+      ],
+    })
+
+    expect(api.get).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/invitations`)
+    expect(wrapper.text()).toContain('pending@example.com')
+  })
+
+  it('cancels a pending invitation', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    api.delete.mockResolvedValue({})
+    const { wrapper } = await mountPage({
+      pendingInvitations: [
+        {
+          uuid: 'invite-2',
+          email: 'pending@example.com',
+          status: 'pending',
+          created_at: '2026-01-01T00:00:00Z',
+          responded_at: null,
+          org: { uuid: org.uuid, name: org.name },
+        },
+      ],
+    })
+
+    await wrapper.find('[data-test="cancel-invitation"]').trigger('click')
+    await flushPromises()
+
+    expect(api.delete).toHaveBeenCalledWith(`/api/orgs/${org.uuid}/invitations/invite-2`)
+    expect(wrapper.text()).not.toContain('pending@example.com')
+    vi.unstubAllGlobals()
+  })
+
+  it('shows an inline error when inviting fails', async () => {
+    api.post.mockRejectedValue({
+      response: { data: { errors: { email: ['This person is already a member of this org.'] } } },
+    })
+    const { wrapper } = await mountPage({ members: [] })
+
+    await wrapper.find('[data-test="new-member-email"]').setValue('new@example.com')
+    await wrapper.find('[data-test="send-invite"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('This person is already a member of this org.')
+    expect(wrapper.text()).not.toContain('new@example.com')
   })
 
   it('removes a member', async () => {

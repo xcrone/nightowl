@@ -9,10 +9,11 @@ use Tests\TestCase;
 /**
  * Settings/environments/token/template endpoints
  * (App\Domains\Settings\Actions\{ShowAppSettings,UpdateAppSetting,
- * UpdateAppEnvironment,RegenerateAppToken,ListAppTemplates,SyncAppTemplate,
- * ApplyAppTemplate}). Relocated from tests/Feature/Apps/AppSettingsTest.php
- * (Batch 5 of the controllers -> Actions migration) — the AlertChannel half
- * of that file now lives in AlertChannelApiTest.php.
+ * DestroyAppSetting,UpdateAppEnvironment,RegenerateAppToken,ListAppTemplates,
+ * SyncAppTemplate,ApplyAppTemplate}). Relocated from
+ * tests/Feature/Apps/AppSettingsTest.php (Batch 5 of the controllers -> Actions
+ * migration) — the AlertChannel half of that file now lives in
+ * AlertChannelApiTest.php.
  */
 class AppSettingsApiTest extends TestCase
 {
@@ -125,5 +126,57 @@ class AppSettingsApiTest extends TestCase
 
         $this->actingAs($user)->putJson('/api/apps/set_app/settings/app_id', ['value' => 'evil'])
             ->assertUnprocessable();
+    }
+
+    public function test_deletes_a_setting(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('set_app');
+        $this->seedApp('other_app');
+
+        $this->actingAs($user)->putJson('/api/apps/set_app/settings/slow_request_threshold_ms', [
+            'value' => '1500',
+        ])->assertOk();
+
+        $this->actingAs($user)->putJson('/api/apps/other_app/settings/slow_request_threshold_ms', [
+            'value' => '9000',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('nightowl_settings', [
+            'app_id' => 'set_app', 'key' => 'slow_request_threshold_ms', 'value' => '1500',
+        ], 'nightowl');
+
+        $this->actingAs($user)->deleteJson('/api/apps/set_app/settings/slow_request_threshold_ms')
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('nightowl_settings', [
+            'app_id' => 'set_app', 'key' => 'slow_request_threshold_ms',
+        ], 'nightowl');
+
+        // a same-named key on another app must not be affected by the delete.
+        $this->assertDatabaseHas('nightowl_settings', [
+            'app_id' => 'other_app', 'key' => 'slow_request_threshold_ms', 'value' => '9000',
+        ], 'nightowl');
+    }
+
+    public function test_deleting_a_reserved_setting_key_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('set_app');
+
+        $this->actingAs($user)->deleteJson('/api/apps/set_app/settings/name')
+            ->assertUnprocessable();
+
+        $this->actingAs($user)->deleteJson('/api/apps/set_app/settings/app_id')
+            ->assertUnprocessable();
+    }
+
+    public function test_delete_is_idempotent_for_a_key_that_was_never_set(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('set_app');
+
+        $this->actingAs($user)->deleteJson('/api/apps/set_app/settings/a_key_that_was_never_set')
+            ->assertNoContent();
     }
 }

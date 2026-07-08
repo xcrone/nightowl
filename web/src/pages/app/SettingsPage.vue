@@ -66,6 +66,10 @@ const AUTO_RESOLVE_KEY = 'issues.auto_resolve_days'
 const autoResolveDays = ref('14')
 const issuesSaving = ref(false)
 const issuesError = ref('')
+// Brief "Saved!" confirmation flag, cleared after 2s — same ephemeral pattern
+// as `thresholdSaved` above (only one auto-resolve setting, so a single flag
+// rather than a per-key object).
+const issuesSaved = ref(false)
 
 const storage = reactive({ loading: false, loaded: false, tables: [], totalBytes: 0 })
 const formatRows = (rows) => Number(rows ?? 0).toLocaleString('en-US')
@@ -240,11 +244,22 @@ async function saveThreshold(slug) {
   }
 }
 
+async function removeThreshold(slug) {
+  try {
+    await api.delete(`/api/apps/${appId.value}/settings/${thresholdKey(slug)}`)
+    thresholds[slug] = { active: false, value: '' }
+  } catch (e) {
+    thresholdErrors[slug] = e?.response?.data?.message ?? 'Could not remove threshold.'
+  }
+}
+
 async function saveIssues() {
   issuesSaving.value = true
   issuesError.value = ''
   try {
     await api.put(`/api/apps/${appId.value}/settings/${AUTO_RESOLVE_KEY}`, { value: String(Number(autoResolveDays.value)) })
+    issuesSaved.value = true
+    setTimeout(() => { issuesSaved.value = false }, 2000)
   } catch (e) {
     issuesError.value = e?.response?.data?.message ?? 'Could not save the auto-resolve window.'
   } finally {
@@ -273,6 +288,15 @@ async function loadAlertChannels() {
     alertChannels.list = data.data ?? data ?? []
   } catch {
     alertChannels.list = []
+  }
+}
+
+async function removeAlertChannel(ch) {
+  try {
+    await api.delete(`/api/apps/${appId.value}/alert-channels/${ch.id}`)
+    alertChannels.list = alertChannels.list.filter((c) => c.id !== ch.id)
+  } catch {
+    /* best-effort, matching this file's other demo no-op error handling */
   }
 }
 
@@ -551,6 +575,11 @@ watch(appId, load, { immediate: true })
                     class="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
                     @click="saveThreshold(t.slug)"
                   >Save</button>
+                  <button
+                    type="button"
+                    class="rounded border border-red-300 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                    @click="removeThreshold(t.slug)"
+                  >Remove</button>
                   <span v-if="thresholdSaved[t.slug]" class="text-xs text-green-600 dark:text-green-400">Saved!</span>
                 </div>
                 <button
@@ -583,6 +612,7 @@ watch(appId, load, { immediate: true })
               :disabled="issuesSaving"
               @click="saveIssues"
             >{{ issuesSaving ? 'Saving…' : 'Save' }}</button>
+            <span v-if="issuesSaved" class="text-xs text-green-600 dark:text-green-400">Saved!</span>
           </div>
           <p v-if="issuesError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ issuesError }}</p>
         </StatPanel>
@@ -631,7 +661,14 @@ watch(appId, load, { immediate: true })
             <li v-if="!alertChannels.list.length" class="py-2 text-sm text-gray-400 dark:text-gray-500">No alert channels configured.</li>
             <li v-for="ch in alertChannels.list" :key="ch.uuid ?? ch.id" class="flex items-center justify-between py-2 text-sm">
               <span class="text-gray-700 dark:text-gray-300">{{ ch.name ?? ch.type }}</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ ch.type }}</span>
+              <span class="flex items-center gap-2">
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ ch.type }}</span>
+                <button
+                  type="button"
+                  class="rounded border border-red-300 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                  @click="removeAlertChannel(ch)"
+                >Remove</button>
+              </span>
             </li>
           </ul>
         </StatPanel>

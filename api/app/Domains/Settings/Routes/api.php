@@ -2,6 +2,7 @@
 
 use App\Domains\Settings\Actions\ApplyAppTemplate;
 use App\Domains\Settings\Actions\DestroyAlertChannel;
+use App\Domains\Settings\Actions\DestroyAppSetting;
 use App\Domains\Settings\Actions\ListAlertChannels;
 use App\Domains\Settings\Actions\ListAppTemplates;
 use App\Domains\Settings\Actions\RegenerateAppToken;
@@ -21,6 +22,7 @@ Route::prefix('apps/{app}')->group(function () {
     Route::get('/settings', ShowAppSettings::class);
     Route::get('/settings/storage', ShowAppStorage::class);
     Route::put('/settings/{key}', UpdateAppSetting::class);
+    Route::delete('/settings/{key}', DestroyAppSetting::class);
     Route::put('/environments/{name}', UpdateAppEnvironment::class);
     Route::post('/token/regenerate', RegenerateAppToken::class);
     Route::get('/templates', ListAppTemplates::class);

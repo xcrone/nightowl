@@ -2,6 +2,7 @@
 
 namespace App\Domains\Settings\Actions;
 
+use App\Domains\Settings\Actions\Concerns\GuardsReservedSettingKeys;
 use App\Models\App;
 use App\Models\Telemetry\Setting;
 use Lorisleiva\Actions\ActionRequest;
@@ -17,14 +18,13 @@ use Lorisleiva\Actions\Concerns\AsAction;
 class UpdateAppSetting
 {
     use AsAction;
-
-    private const RESERVED_KEYS = ['app_id', 'name', 'description', 'environments', 'agent_token', 'template'];
+    use GuardsReservedSettingKeys;
 
     public function authorize(ActionRequest $request): bool
     {
         $key = $request->route('key');
 
-        abort_if(in_array($key, self::RESERVED_KEYS, true), 422, "'{$key}' is a reserved setting key.");
+        $this->abortIfReservedSettingKey($key);
 
         return true;
     }

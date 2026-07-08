@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
 
-vi.mock('../../services/api', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() }, csrfCookie: vi.fn() }))
+vi.mock('../../services/api', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() }, csrfCookie: vi.fn() }))
 import api from '../../services/api'
 import SettingsPage from './SettingsPage.vue'
 
@@ -193,6 +193,20 @@ describe('SettingsPage', () => {
       await flushPromises()
       expect(requestsRow.text()).toContain('Threshold must be positive.')
     })
+
+    it('removes a threshold', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Thresholds')
+      const requestsRow = wrapper.findAll('li').find((li) => li.text().startsWith('Routes'))
+      api.delete.mockResolvedValue({})
+      await requestsRow.findAll('button').find((b) => b.text() === 'Remove').trigger('click')
+      await flushPromises()
+      expect(api.delete).toHaveBeenCalledWith(
+        '/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE/settings/threshold.requests.duration_ms',
+      )
+      const updatedRequestsRow = wrapper.findAll('li').find((li) => li.text().startsWith('Routes'))
+      expect(updatedRequestsRow.text()).toContain('Add threshold')
+    })
   })
 
   describe('Issues tab', () => {
@@ -311,6 +325,38 @@ describe('SettingsPage', () => {
       expect(wrapper.text()).toContain('Name is required.')
       expect(api.post).not.toHaveBeenCalled()
     })
+
+    it('removes an alert channel', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Alerts')
+
+      const channel = {
+        id: 7,
+        uuid: 'chan-uuid-7',
+        name: '#incidents',
+        type: 'slack',
+        config: {},
+        enabled: true,
+      }
+      api.get.mockImplementation((url) => {
+        if (url.includes('/alert-channels')) return Promise.resolve({ data: { data: [channel] } })
+        if (url.includes('/settings/storage')) return Promise.resolve({ data: storage })
+        return Promise.resolve({ data: { settings } })
+      })
+      // Force a re-fetch of the alert channels list under the new mock (mirrors
+      // how the modal-create test re-triggers loadAlertChannels via the watcher).
+      await clickTab(wrapper, 'Environments')
+      await clickTab(wrapper, 'Alerts')
+      expect(wrapper.text()).toContain('#incidents')
+
+      api.delete.mockResolvedValue({})
+      const removeButton = wrapper.findAll('li').find((li) => li.text().includes('#incidents')).findAll('button').find((b) => b.text() === 'Remove')
+      await removeButton.trigger('click')
+      await flushPromises()
+
+      expect(api.delete).toHaveBeenCalledWith('/api/apps/3FoNKDbo7D5S9MGhLx9qybejLCE/alert-channels/7')
+      expect(wrapper.text()).not.toContain('#incidents')
+    })
   })
 
   describe('Thresholds tab — save confirmation', () => {
@@ -321,6 +367,16 @@ describe('SettingsPage', () => {
       await requestsRow.findAll('button').find((b) => b.text() === 'Save').trigger('click')
       await flushPromises()
       expect(requestsRow.text()).toContain('Saved!')
+    })
+  })
+
+  describe('Issues tab — save confirmation', () => {
+    it('shows a "Saved!" confirmation after a successful save', async () => {
+      const wrapper = await mountPage()
+      await clickTab(wrapper, 'Issues')
+      await wrapper.findAll('button').find((b) => b.text() === 'Save').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Saved!')
     })
   })
 })

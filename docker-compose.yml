@@ -116,6 +116,10 @@ services:
       FRONTEND_URLS: ${FRONTEND_URL:-http://localhost:5173}
       SANCTUM_STATEFUL_DOMAINS: localhost:5173
       SESSION_DOMAIN: localhost
+      # Used to build links in outgoing mail/alerts (e.g. OrgInvitationReceived's
+      # "Log in to respond" button) — defaults to the production dashboard
+      # (config/nightowl.php) otherwise, which is wrong for local dev.
+      NIGHTOWL_DASHBOARD_URL: ${FRONTEND_URL:-http://localhost:5173}
       # api's own schema (users, orgs, teams, apps, sessions, ...) — a
       # separate `nightowl_app` database on the SAME Postgres server as the
       # agent's `nightowl` telemetry DB below, not merged into it. Via
@@ -137,6 +141,21 @@ services:
       NIGHTOWL_DB_DATABASE: ${NIGHTOWL_DB_DATABASE:-nightowl}
       NIGHTOWL_DB_USERNAME: ${NIGHTOWL_DB_USERNAME:-nightowl}
       NIGHTOWL_DB_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
+      # Local dev: this container joins the external supplycart-network, which
+      # already runs a shared Mailpit (SMTP catcher, web UI at
+      # http://localhost:8025) for other projects on this machine — route
+      # outgoing mail (e.g. OrgInvitationReceived) there instead of the log
+      # driver so it's actually visible somewhere rather than buried in
+      # storage/logs/laravel.log.
+      MAIL_MAILER: smtp
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      # Shared Mailpit requires auth (MP_SMTP_AUTH on that container) —
+      # these are its fixed dev credentials, not a NightOwl-specific secret.
+      MAIL_USERNAME: supplycart
+      MAIL_PASSWORD: password
+      MAIL_FROM_ADDRESS: noreply@nightowl.test
+      MAIL_FROM_NAME: NightOwl
     ports:
       # Loopback-only: reachable from this machine, not the rest of the LAN.
       - "127.0.0.1:8000:8000"
