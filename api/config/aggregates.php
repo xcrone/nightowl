@@ -68,13 +68,13 @@ return [
         'model' => RequestRecord::class,
         'group_by' => ['route_path'], 'label' => 'route_path',
         'extra' => ['method'], // carried through as a representative value
-        'duration' => true, 'detail' => true,
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
         'count_buckets' => [
             'c2xx' => [['status_code', '<', 400]],
             'c4xx' => [['status_code', '>=', 400], ['status_code', '<', 500]],
             'c5xx' => [['status_code', '>=', 500]],
         ],
-        'sortable' => ['total', 'avg', 'p95', 'c5xx', 'route_path'],
+        'sortable' => ['total', 'avg', 'p95', 'c5xx', 'route_path', 'last_triggered'],
         'default_sort' => '-total',
         'search' => ['route_path', 'route_name', 'url'], 'scope' => ['user_id'],
         'panels' => [
@@ -86,13 +86,13 @@ return [
     'outgoing-requests' => [
         'model' => OutgoingRequest::class,
         'group_by' => ['host'], 'label' => 'host',
-        'duration' => true, 'detail' => true,
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
         'count_buckets' => [
             'c2xx' => [['status_code', '<', 400]],
             'c4xx' => [['status_code', '>=', 400], ['status_code', '<', 500]],
             'c5xx' => [['status_code', '>=', 500]],
         ],
-        'sortable' => ['total', 'avg', 'p95', 'c5xx', 'host'],
+        'sortable' => ['total', 'avg', 'p95', 'c5xx', 'host', 'last_triggered'],
         'default_sort' => '-total',
         'search' => ['host', 'url'], 'scope' => ['user_id'],
         'panels' => [
@@ -104,14 +104,21 @@ return [
     'jobs' => [
         'model' => JobRecord::class,
         'group_by' => ['job_class'], 'label' => 'job_class',
-        'duration' => true, 'detail' => true,
+        // nightowl_jobs has no separate start-timestamp column (created_at is
+        // written once, at completion, alongside `duration`); 'extra' carries
+        // through the *same* latest occurrence's duration as `last_duration`
+        // so the frontend can derive "triggered at" as last_finished -
+        // last_duration client-side, rather than mixing the group's latest
+        // created_at with an unrelated occurrence's duration.
+        'extra' => ['last_duration' => 'duration'],
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_finished',
         'count_buckets' => [
             'queued' => [['status', '=', 'queued']],
             'processed' => [['status', '=', 'processed']],
             'released' => [['status', '=', 'released']],
             'failed' => [['status', '=', 'failed']],
         ],
-        'sortable' => ['total', 'avg', 'p95', 'failed', 'job_class'],
+        'sortable' => ['total', 'avg', 'p95', 'failed', 'job_class', 'last_finished'],
         'default_sort' => '-total',
         'search' => ['job_class', 'queue'], 'scope' => ['user_id'],
         'panels' => [
@@ -123,12 +130,12 @@ return [
     'commands' => [
         'model' => CommandRecord::class,
         'group_by' => ['command'], 'label' => 'command',
-        'duration' => true, 'detail' => true,
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
         'count_buckets' => [
             'successful' => [['exit_code', '=', 0]],
             'failed' => [['exit_code', '!=', 0]],
         ],
-        'sortable' => ['total', 'avg', 'p95', 'failed', 'command'],
+        'sortable' => ['total', 'avg', 'p95', 'failed', 'command', 'last_triggered'],
         'default_sort' => '-total',
         'search' => ['command'], 'scope' => [],
         'panels' => [
@@ -142,13 +149,13 @@ return [
         'group_by' => ['command', 'expression'], 'label' => 'command',
         // Humanize the raw cron `expression` group column into a `schedule` label.
         'cron' => 'expression',
-        'duration' => true, 'detail' => true,
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
         'count_buckets' => [
             'processed' => [['status', '=', 'processed']],
             'failed' => [['status', '=', 'failed']],
             'skipped' => [['status', '=', 'skipped']],
         ],
-        'sortable' => ['total', 'avg', 'p95', 'command'],
+        'sortable' => ['total', 'avg', 'p95', 'command', 'last_triggered'],
         'default_sort' => '-total',
         'search' => ['command'], 'scope' => [],
         'panels' => [
@@ -161,8 +168,8 @@ return [
         'model' => QueryRecord::class,
         'group_by' => ['group_hash'], 'label' => 'sql_query',
         'extra' => ['connection', 'rw' => 'connection_type'],
-        'duration' => true, 'detail' => true,
-        'sortable' => ['total', 'calls', 'avg', 'p95'],
+        'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
+        'sortable' => ['total', 'calls', 'avg', 'p95', 'last_triggered'],
         'default_sort' => '-calls',
         'search' => ['sql_query', 'connection'], 'scope' => ['connection'],
         'panels' => [
@@ -174,6 +181,7 @@ return [
     'cache' => [
         'model' => CacheEvent::class,
         'group_by' => ['key', 'store'], 'label' => 'key',
+        'last' => 'created_at', 'last_alias' => 'last_triggered',
         'count_buckets' => [
             'hits' => [['event_type', '=', 'hit']],
             'misses' => [['event_type', '=', 'missed']],
@@ -181,7 +189,7 @@ return [
             'deletes' => [['event_type', '=', 'forget']],
             'failures' => [['event_type', '=', 'failed']],
         ],
-        'sortable' => ['total', 'hits', 'misses', 'writes', 'deletes', 'key'],
+        'sortable' => ['total', 'hits', 'misses', 'writes', 'deletes', 'key', 'last_triggered'],
         'default_sort' => '-total',
         'search' => ['key', 'store'], 'scope' => [],
         // 'failures.delete' has no distinct column in the raw stream (a single

@@ -200,7 +200,9 @@ class AggregateQuery
             $row['count'] = $row['total'];
             $row['calls'] = $row['total'];
         }
-        foreach (['avg', 'p95', 'min', 'max'] as $k) {
+        // 'last_duration' (jobs only, via 'extra') is a duration value like
+        // avg/p95/min/max and gets the same int cast for API consistency.
+        foreach (['avg', 'p95', 'min', 'max', 'last_duration'] as $k) {
             if (array_key_exists($k, $row) && $row[$k] !== null) {
                 $row[$k] = (int) $row[$k];
             }

@@ -48,6 +48,12 @@ const num = (v) => Number(v ?? 0)
 // `/…/{resource}/` route with an empty `:key` segment, so return null instead
 // (onRowClick no-ops, matching non-clickable rows).
 const isEmptyKey = (v) => v === null || v === undefined || v === ''
+
+// Jobs only store a finish timestamp + duration (no separate "triggered" event),
+// so derive it: last_duration arrives in microseconds, Date arithmetic needs ms.
+const triggeredAt = (row) =>
+  row.last_finished ? new Date(new Date(row.last_finished).getTime() - Number(row.last_duration ?? 0) / 1000) : null
+
 const detailLink = (resource, keyField) => (row, appId) =>
   isEmptyKey(row[keyField])
     ? null
@@ -129,6 +135,7 @@ export const aggregateConfig = {
       ...statusCols(),
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => [statusBarPanel(p.requests), durationPanel(p.duration)],
   },
@@ -147,6 +154,7 @@ export const aggregateConfig = {
       ...statusCols(),
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => [statusBarPanel(p.requests), durationPanel(p.duration)],
   },
@@ -168,6 +176,8 @@ export const aggregateConfig = {
       { key: 'failed', label: 'Failed', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Triggered', format: (v, row) => relativeTime(triggeredAt(row)), align: 'right' },
+      { key: 'last_finished', label: 'Finished', format: relativeTime, align: 'right' },
     ],
     panels: (p) => {
       const a = p.attempts ?? p.jobs ?? {}
@@ -209,6 +219,7 @@ export const aggregateConfig = {
       { key: 'failed', label: 'Failed', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => {
       const c = p.calls ?? p.commands ?? {}
@@ -259,6 +270,7 @@ export const aggregateConfig = {
       { key: 'skipped', label: 'Skipped', align: 'right' },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => {
       const t = p.tasks ?? p.scheduled_tasks ?? {}
@@ -302,6 +314,7 @@ export const aggregateConfig = {
       { key: 'calls', label: 'Calls', align: 'right' },
       { key: 'total', label: 'Total', format: formatDuration, cellClass: durColor, align: 'right' },
       ...durationCols(),
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => {
       const c = p.calls ?? p.queries ?? {}
@@ -401,6 +414,7 @@ export const aggregateConfig = {
       { key: 'deletes', label: 'Deletes', align: 'right' },
       { key: 'failures', label: 'Failures', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
     ],
     panels: (p) => {
       const e = p.events ?? {}

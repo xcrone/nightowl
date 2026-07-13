@@ -158,6 +158,80 @@ describe('AggregateListPage', () => {
     expect(push).toHaveBeenCalledWith(`/dashboard/app1/exceptions/${base64UrlEncode('App\\LogicException')}`)
   })
 
+  it('renders a Last Triggered column with a relative-time cell for a non-jobs resource', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-06T12:00:00Z'))
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      return Promise.resolve({
+        data: {
+          data: [
+            {
+              method: 'GET',
+              route_path: '/orders',
+              c2xx: 40,
+              c4xx: 5,
+              c5xx: 4,
+              total: 49,
+              avg: 14310,
+              p95: 1570000,
+              last_triggered: '2026-07-06T11:30:00Z',
+            },
+          ],
+          panels,
+        },
+      })
+    }
+    const { wrapper } = await mountPage('requests', impl)
+    vi.useRealTimers()
+
+    const header = wrapper.findAll('th').find((th) => th.text().includes('Last Triggered'))
+    expect(header).toBeTruthy()
+    expect(wrapper.text()).toContain('30m ago')
+  })
+
+  it('renders both a Triggered and a Finished column for jobs, with Triggered reading earlier than Finished', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-06T12:00:00Z'))
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      return Promise.resolve({
+        data: {
+          data: [
+            {
+              job_class: 'App\\Jobs\\ProcessPayment',
+              queued: 1,
+              processed: 1,
+              released: 0,
+              failed: 0,
+              total: 1,
+              avg: 100,
+              p95: 200,
+              // Finished 1h ago; duration was 90 minutes, so it was triggered 2h30m ago
+              // (crosses the hour bucket boundary so the two relative strings differ).
+              last_finished: '2026-07-06T11:00:00Z',
+              last_duration: 5_400_000_000, // 90 minutes, in microseconds
+            },
+          ],
+          panels: {
+            attempts: { total: 1, processed: 1, released: 0, failed: 0 },
+            duration: { min: 100, max: 200, avg: 100, p95: 200 },
+          },
+        },
+      })
+    }
+    const { wrapper } = await mountPage('jobs', impl)
+    vi.useRealTimers()
+
+    const headers = wrapper.findAll('th').map((th) => th.text())
+    expect(headers.some((h) => h.includes('Triggered'))).toBe(true)
+    expect(headers.some((h) => h.includes('Finished'))).toBe(true)
+
+    // Triggered = last_finished - last_duration, so it renders as further in the past.
+    expect(wrapper.text()).toContain('2h ago')
+    expect(wrapper.text()).toContain('1h ago')
+  })
+
   it('client-side filters exceptions by handled/unhandled', async () => {
     const impl = (url) => {
       if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })

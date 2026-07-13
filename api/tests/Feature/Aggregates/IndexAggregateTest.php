@@ -3,14 +3,17 @@
 namespace Tests\Feature\Aggregates;
 
 use App\Models\Telemetry\CacheEvent;
+use App\Models\Telemetry\CommandRecord;
 use App\Models\Telemetry\ExceptionRecord;
 use App\Models\Telemetry\JobRecord;
 use App\Models\Telemetry\MailRecord;
+use App\Models\Telemetry\OutgoingRequest;
 use App\Models\Telemetry\QueryRecord;
 use App\Models\Telemetry\RequestRecord;
 use App\Models\Telemetry\ScheduledTask;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -410,5 +413,92 @@ class IndexAggregateTest extends TestCase
         $byJobs = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/users?sort=-queued_jobs')->json('data'))
             ->pluck('user_id')->all();
         $this->assertSame(['alpha', 'beta'], $byJobs);
+    }
+
+    /** requests rows now emit `last_triggered` (MAX(created_at) per group). */
+    public function test_requests_aggregate_emits_last_triggered(): void
+    {
+        $user = User::factory()->create();
+
+        RequestRecord::factory()->create([
+            'app_id' => 'agg_app', 'route_path' => '/api/orders',
+            'created_at' => now()->subMinutes(10),
+        ]);
+        $latest = RequestRecord::factory()->create([
+            'app_id' => 'agg_app', 'route_path' => '/api/orders',
+            'created_at' => now(),
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/requests')->json('data'))
+            ->firstWhere('route_path', '/api/orders');
+
+        $this->assertArrayHasKey('last_triggered', $row);
+        $this->assertSame(
+            $latest->created_at->toIso8601String(),
+            Carbon::parse($row['last_triggered'])->toIso8601String()
+        );
+    }
+
+    /**
+     * jobs rows emit both `last_finished` (MAX(created_at)) and `last_duration`
+     * — the latter must be the duration of the SAME latest-created_at
+     * occurrence, not any occurrence in the group (nightowl_jobs has no
+     * separate start timestamp, so the frontend derives "triggered at" as
+     * last_finished - last_duration).
+     */
+    public function test_jobs_aggregate_emits_last_finished_and_matching_last_duration(): void
+    {
+        $user = User::factory()->create();
+
+        JobRecord::factory()->create([
+            'app_id' => 'agg_app', 'job_class' => 'App\\Jobs\\SendInvoice',
+            'created_at' => now()->subMinutes(10), 'duration' => 111111,
+        ]);
+        $latest = JobRecord::factory()->create([
+            'app_id' => 'agg_app', 'job_class' => 'App\\Jobs\\SendInvoice',
+            'created_at' => now(), 'duration' => 222222,
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/jobs')->json('data'))
+            ->firstWhere('job_class', 'App\\Jobs\\SendInvoice');
+
+        $this->assertArrayHasKey('last_finished', $row);
+        $this->assertArrayHasKey('last_duration', $row);
+        $this->assertSame(
+            $latest->created_at->toIso8601String(),
+            Carbon::parse($row['last_finished'])->toIso8601String()
+        );
+        $this->assertSame($latest->duration, $row['last_duration']);
+    }
+
+    /**
+     * Lighter coverage: outgoing-requests, commands, scheduled-tasks, queries,
+     * and cache aggregate rows all now carry `last_triggered` too.
+     */
+    public function test_remaining_resources_emit_last_triggered(): void
+    {
+        $user = User::factory()->create();
+
+        OutgoingRequest::factory()->create(['app_id' => 'agg_app', 'host' => 'https://api.stripe.com']);
+        CommandRecord::factory()->create(['app_id' => 'agg_app', 'command' => 'migrate --force']);
+        ScheduledTask::factory()->create(['app_id' => 'agg_app', 'command' => 'php artisan inspire']);
+        QueryRecord::factory()->create(['app_id' => 'agg_app', 'group_hash' => 'gh-remaining']);
+        CacheEvent::factory()->create(['app_id' => 'agg_app', 'key' => 'k', 'store' => 'redis', 'event_type' => 'hit']);
+
+        $cases = [
+            'outgoing-requests' => ['host', 'https://api.stripe.com'],
+            'commands' => ['command', 'migrate --force'],
+            'scheduled-tasks' => ['command', 'php artisan inspire'],
+            'queries' => ['group_hash', 'gh-remaining'],
+            'cache' => ['key', 'k'],
+        ];
+
+        foreach ($cases as $resource => [$col, $value]) {
+            $row = collect($this->actingAs($user)->getJson("/api/apps/agg_app/aggregate/{$resource}")->json('data'))
+                ->firstWhere($col, $value);
+
+            $this->assertNotNull($row, "no row found for {$resource}");
+            $this->assertArrayHasKey('last_triggered', $row, "{$resource} row missing last_triggered");
+        }
     }
 }
