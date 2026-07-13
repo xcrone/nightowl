@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
+use App\Events\AppTokenIssued;
+use App\Listeners\SyncAppTokenToNightowl;
 use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -27,5 +30,7 @@ class AppServiceProvider extends ServiceProvider
         // any request that doesn't send Accept: application/json, and
         // crashes with a 500 instead of a clean 401.
         Authenticate::redirectUsing(fn () => null);
+
+        Event::listen(AppTokenIssued::class, SyncAppTokenToNightowl::class);
     }
 }

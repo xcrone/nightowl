@@ -18,6 +18,8 @@ class AppManagementApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected $connectionsToTransact = ['pgsql', 'nightowl'];
+
     private function teamFor(User $user): Team
     {
         $org = Org::query()->create(['name' => 'Org', 'account_email' => 'org@example.com']);
@@ -46,6 +48,14 @@ class AppManagementApiTest extends TestCase
         $this->assertSame($team->id, $app->team_id);
         $this->assertNotEmpty($app->agent_token);
         $this->assertStringStartsWith('nwt_', $app->agent_token);
+
+        // StoreApp dispatches AppTokenIssued -> SyncAppTokenToNightowl, which
+        // upserts a lookup row so the agent daemon can resolve app_id from
+        // its configured token at boot (see agent's Support\AppIdResolver).
+        $this->assertDatabaseHas('nightowl_apps', [
+            'app_id' => $app->app_id,
+            'token_hash' => hash('sha256', $app->agent_token),
+        ], 'nightowl');
     }
 
     public function test_store_app_requires_a_name(): void

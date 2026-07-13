@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Schema;
 use NightOwl\Agent\AsyncServer;
 use NightOwl\Agent\PortInUseException;
 use NightOwl\Agent\Server;
+use NightOwl\Support\AppIdResolver;
 
 final class AgentCommand extends Command
 {
@@ -26,6 +27,8 @@ final class AgentCommand extends Command
         // of that. Default memory_limit is 128M on some distros, which is below
         // our default max_buffer_memory (256MB).
         ini_set('memory_limit', '-1');
+
+        AppIdResolver::resolve();
 
         $host = $this->option('host') ?? config('nightowl.agent.host', '127.0.0.1');
         $port = (int) ($this->option('port') ?? config('nightowl.agent.port', 2407));

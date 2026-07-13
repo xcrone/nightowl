@@ -4,6 +4,7 @@ namespace Tests\Feature\Settings;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -54,6 +55,43 @@ class AppSettingsApiTest extends TestCase
 
         $this->assertNotSame($old, $new);
         $this->assertStringStartsWith('nwt_', $new);
+
+        // RegenerateAppToken dispatches AppTokenIssued -> SyncAppTokenToNightowl.
+        $this->assertDatabaseHas('nightowl_apps', [
+            'app_id' => 'set_app',
+            'token_hash' => hash('sha256', $new),
+        ], 'nightowl');
+    }
+
+    public function test_token_regeneration_replaces_the_existing_nightowl_apps_row_not_duplicates_it(): void
+    {
+        $user = User::factory()->create();
+        $this->seedApp('set_app');
+
+        $first = $this->actingAs($user)->postJson('/api/apps/set_app/token/regenerate')
+            ->assertOk()->json('agent_token');
+
+        $this->assertDatabaseHas('nightowl_apps', [
+            'app_id' => 'set_app',
+            'token_hash' => hash('sha256', $first),
+        ], 'nightowl');
+
+        $second = $this->actingAs($user)->postJson('/api/apps/set_app/token/regenerate')
+            ->assertOk()->json('agent_token');
+
+        $this->assertDatabaseMissing('nightowl_apps', [
+            'app_id' => 'set_app',
+            'token_hash' => hash('sha256', $first),
+        ], 'nightowl');
+        $this->assertDatabaseHas('nightowl_apps', [
+            'app_id' => 'set_app',
+            'token_hash' => hash('sha256', $second),
+        ], 'nightowl');
+
+        $this->assertSame(
+            1,
+            DB::connection('nightowl')->table('nightowl_apps')->where('app_id', 'set_app')->count(),
+        );
     }
 
     public function test_template_sync_then_apply_copies_environment_colors(): void

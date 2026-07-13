@@ -4,6 +4,7 @@ namespace NightOwl\Commands;
 
 use Illuminate\Console\Command;
 use NightOwl\Agent\DrainWorker;
+use NightOwl\Support\AppIdResolver;
 
 /**
  * Internal command — spawned by nightowl:agent via pcntl_exec() for each drain worker.
@@ -23,6 +24,8 @@ final class DrainWorkerCommand extends Command
     public function handle(): int
     {
         ini_set('memory_limit', '-1');
+
+        AppIdResolver::resolve();
 
         $sqlitePath = $this->option('sqlite-path')
             ?? config('nightowl.agent.sqlite_path', storage_path('nightowl/agent-buffer.sqlite'));

@@ -73,7 +73,14 @@ reference is `docs/api-contract.md`.
   `app_id` (added by an `agent/` migration, backfilled to the seeded default
   app), so one shared Postgres instance holds several apps. Per-app
   telemetry is nested under `/api/apps/{app}/…` and scoped `where app_id = ?`
-  (`TelemetryRecord::scopeForApp`).
+  (`TelemetryRecord::scopeForApp`). An agent daemon resolves its own
+  `app_id` automatically at boot from its configured token, via a minimal
+  `nightowl_apps` (`app_id` + `token_hash`) lookup table inside the
+  `nightowl` DB — kept in sync from api's `App\Events\AppTokenIssued` /
+  `App\Listeners\SyncAppTokenToNightowl` whenever a dashboard app's token is
+  issued or regenerated (`agent/src/Support/AppIdResolver.php` is the reader
+  side). `NIGHTOWL_APP_ID` remains available as an explicit override for
+  self-hosted use with no api/dashboard relationship at all.
 - **Two config registries drive generic, cross-cutting Actions** (`api/app/Actions/`,
   deliberately not a DDD domain — see `api/CLAUDE.md`): `api/config/telemetry.php`
   (raw lists/detail/related via `App\Actions\Telemetry\*`) and

@@ -3,6 +3,7 @@
 namespace App\Domains\Apps\Actions;
 
 use App\Domains\Apps\Resources\AppResource;
+use App\Events\AppTokenIssued;
 use App\Models\App;
 use App\Models\Team;
 use App\Support\AuthorizesOrgMembership;
@@ -49,6 +50,8 @@ class StoreApp
             'app_id' => $this->newAppId(),
             'agent_token' => App::generateAgentToken(),
         ]);
+
+        AppTokenIssued::dispatch($app->app_id, $app->agent_token);
 
         return response()->json((new AppResource($app))->resolve(), 201);
     }

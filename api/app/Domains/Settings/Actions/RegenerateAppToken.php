@@ -2,6 +2,7 @@
 
 namespace App\Domains\Settings\Actions;
 
+use App\Events\AppTokenIssued;
 use App\Models\App;
 use Lorisleiva\Actions\Concerns\AsAction;
 
@@ -24,6 +25,8 @@ class RegenerateAppToken
     {
         $token = App::generateAgentToken();
         $app->update(['agent_token' => $token]);
+
+        AppTokenIssued::dispatch($app->app_id, $token);
 
         return response()->json(['agent_token' => $token]);
     }
