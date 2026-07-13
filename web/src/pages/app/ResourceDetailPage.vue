@@ -29,6 +29,24 @@ const id = computed(() => route.params.id)
 // "Details" table skips them — otherwise every request/job/etc. would show
 // its (often huge) payload/headers/context twice.
 const BLOB_FIELDS = ['payload', 'headers', 'context', 'exception_preview', 'sql_query', 'trace', 'message', 'extra']
+
+// Per-blob-field label/subtitle overrides, sourced from how the sensor
+// actually populates each column (agent/vendor/laravel/nightwatch's
+// RequestSensor) — plain humanize() would leave "Headers"/"Payload"
+// ambiguous about which side of the request/response they're from.
+const BLOB_FIELD_META = {
+  // Built from the incoming request's headers only — the sensor never
+  // captures response headers for any resource type.
+  headers: { label: 'Request Headers' },
+  // Only non-empty on a 500 response (and only when payload capture is
+  // enabled) — the sensor deliberately skips storing request bodies on
+  // ordinary responses, so an empty Payload panel here is expected, not
+  // a bug.
+  payload: { label: 'Payload', subtitle: 'Request body — only captured on 500 responses, when payload capture is enabled' },
+  // Laravel's Context facade (structured-logging context), not route
+  // params/query context.
+  context: { label: 'Context', subtitle: "Laravel's Context facade data" },
+}
 // Internal/plumbing columns never worth showing a user. `timestamp` is a raw
 // unix-epoch-float duplicate of `created_at` on every telemetry table (not an
 // ISO string, so absoluteTime() can't parse it anyway) — created_at already
@@ -42,9 +60,12 @@ const state = reactive({
   origin: null,
   children: {},
   childrenFilter: null,
+  userEmail: '',
 })
 
 const activeTab = ref('')
+// Lazy per-tab cache, keyed by child resource key, so revisiting a tab
+// doesn't refetch.
 const relatedCache = reactive({})
 const copiedField = ref('')
 
@@ -110,7 +131,8 @@ const blobPanels = computed(() => {
     } catch {
       parsed = null
     }
-    return { key: field, label: humanize(field), raw, parsed }
+    const meta = BLOB_FIELD_META[field]
+    return { key: field, label: meta?.label ?? humanize(field), subtitle: meta?.subtitle ?? '', raw, parsed }
   })
 })
 
@@ -119,30 +141,42 @@ const originLink = computed(() => {
   return `/dashboard/${appId.value}/${state.origin.resource}/record/${state.origin.record.id}`
 })
 
-const tabs = computed(() => Object.entries(state.children).map(([res, count]) => ({ resource: res, count })))
+const relatedTabs = computed(() => Object.entries(state.children).map(([res, count]) => ({ resource: res, count })))
 
 function resourceLabel(key) {
   return resources[key]?.label ?? key
 }
 
+// One unified tab strip covers everything except Details/Authenticated User:
+// the JSON/text blob fields (Headers, Payload, Context, ...) plus every
+// correlated resource (Queries, Cache Events, ...) — a blob tab's content is
+// already in `blobPanels`, a related tab's rows are fetched lazily on select.
+const allTabs = computed(() => [
+  ...blobPanels.value.map((p) => ({ key: p.key, kind: 'blob', label: p.label })),
+  ...relatedTabs.value.map((t) => ({ key: t.resource, kind: 'related', label: `${resourceLabel(t.resource)} (${t.count})` })),
+])
+const activePanel = computed(() => blobPanels.value.find((p) => p.key === activeTab.value) ?? null)
+
 const childColumns = computed(() => resources[activeTab.value]?.columns ?? [])
 const activeTabState = computed(() => relatedCache[activeTab.value] ?? { loading: false, rows: [] })
 
-async function selectTab(childResource) {
-  activeTab.value = childResource
-  if (relatedCache[childResource]) return
-  relatedCache[childResource] = { loading: true, rows: [] }
+async function selectTab(key) {
+  activeTab.value = key
+  if (BLOB_FIELDS.includes(key)) return
+  if (relatedCache[key]) return
+  const seq = requestSeq
+  relatedCache[key] = { loading: true, rows: [] }
   try {
-    const { data } = await api.get(`/api/apps/${appId.value}/${childResource}`, {
+    const { data } = await api.get(`/api/apps/${appId.value}/${key}`, {
       params: {
         execution_source: state.childrenFilter?.execution_source,
         execution_id: state.childrenFilter?.execution_id,
         period: app.period,
       },
     })
-    relatedCache[childResource] = { loading: false, rows: data?.data ?? [] }
+    if (seq === requestSeq) relatedCache[key] = { loading: false, rows: data?.data ?? [] }
   } catch {
-    relatedCache[childResource] = { loading: false, rows: [] }
+    if (seq === requestSeq) relatedCache[key] = { loading: false, rows: [] }
   }
 }
 
@@ -150,11 +184,21 @@ function recordLink(res, row) {
   return row?.id ? `/dashboard/${appId.value}/${res}/record/${row.id}` : null
 }
 
+async function loadUserEmail(userId, seq) {
+  try {
+    const { data } = await api.get(`/api/apps/${appId.value}/users/${userId}`, { params: { period: app.period } })
+    if (seq === requestSeq) state.userEmail = data?.user?.email ?? ''
+  } catch {
+    if (seq === requestSeq) state.userEmail = ''
+  }
+}
+
 async function load() {
   if (!appId.value || !resource.value || !id.value) return
   const seq = ++requestSeq
   state.loading = true
   state.notFound = false
+  state.userEmail = ''
   activeTab.value = ''
   Object.keys(relatedCache).forEach((key) => delete relatedCache[key])
   try {
@@ -167,8 +211,9 @@ async function load() {
     state.origin = related?.origin ?? null
     state.children = related?.children ?? {}
     state.childrenFilter = related?.children_filter ?? null
-    const [firstTab] = Object.keys(state.children)
-    if (firstTab) selectTab(firstTab)
+    if (record?.user_id) loadUserEmail(record.user_id, seq)
+    const defaultTab = blobPanels.value[0]?.key ?? Object.keys(state.children)[0]
+    if (defaultTab) selectTab(defaultTab)
   } catch (e) {
     if (seq !== requestSeq) return
     state.record = null
@@ -229,62 +274,73 @@ watch([appId, resource, id, () => app.period], load, { immediate: true })
 
     <!-- Authenticated User -->
     <StatPanel v-if="state.record?.user_id" title="Authenticated User">
-      <RouterLink
-        :to="`/dashboard/${appId}/users/${state.record.user_id}`"
-        class="text-sm text-primary-600 hover:underline dark:text-primary-400"
-      >{{ state.record.user_id }}</RouterLink>
-    </StatPanel>
-
-    <!-- Details: generic key/value table over the raw record -->
-    <StatPanel title="Details">
-      <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-          <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-            <tr v-if="!detailFields.length">
-              <td class="px-2 py-3 text-center text-gray-400 dark:text-gray-500">No fields.</td>
-            </tr>
-            <tr v-for="field in detailFields" v-else :key="field.key">
-              <td class="w-48 px-2 py-1.5 align-top font-medium text-gray-500 dark:text-gray-400">{{ field.label }}</td>
-              <td class="break-all px-2 py-1.5 text-gray-900 dark:text-gray-100">{{ field.value }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </StatPanel>
-
-    <!-- JSON/text blob panels: Payload/Headers/Context/etc. -->
-    <div v-if="blobPanels.length" class="grid gap-4 lg:grid-cols-2">
-      <StatPanel v-for="panel in blobPanels" :key="panel.key" :title="panel.label">
-        <template #actions>
-          <button type="button" class="text-primary-600 dark:text-primary-400" @click="copyField(panel.key, panel.raw)">
-            {{ copiedField === panel.key ? 'Copied!' : 'Copy' }}
-          </button>
-        </template>
-        <div v-if="panel.parsed" class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs dark:bg-gray-800">
-          <JsonViewer :data="panel.parsed" />
+      <div class="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div class="min-w-0">
+          <dt class="text-xs text-gray-500 dark:text-gray-400">ID</dt>
+          <dd class="text-sm font-medium">
+            <RouterLink
+              :to="`/dashboard/${appId}/users/${state.record.user_id}`"
+              class="text-primary-600 hover:underline dark:text-primary-400"
+            >{{ state.record.user_id }}</RouterLink>
+          </dd>
         </div>
-        <pre v-else class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">{{ panel.raw }}</pre>
-      </StatPanel>
-    </div>
+        <div v-if="state.userEmail" class="min-w-0">
+          <dt class="text-xs text-gray-500 dark:text-gray-400">Email Address</dt>
+          <dd class="break-all text-sm font-medium text-gray-900 dark:text-gray-100">{{ state.userEmail }}</dd>
+        </div>
+      </div>
+    </StatPanel>
 
-    <!-- Related: Telescope-style tab bar of correlated records -->
-    <StatPanel v-if="tabs.length" title="Related">
-      <div class="mb-3 inline-flex flex-wrap gap-1">
+    <!-- Details: generic key/value grid over the raw record -->
+    <StatPanel title="Details">
+      <p v-if="!detailFields.length" class="text-sm text-gray-400 dark:text-gray-500">No fields.</p>
+      <div v-else class="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div v-for="field in detailFields" :key="field.key" class="min-w-0">
+          <dt class="text-xs text-gray-500 dark:text-gray-400">{{ field.label }}</dt>
+          <dd class="break-all text-sm font-medium text-gray-900 dark:text-gray-100">{{ field.value }}</dd>
+        </div>
+      </div>
+    </StatPanel>
+
+    <!-- Everything else — Headers/Payload/Context blob fields and every
+         correlated resource — behind one tab strip, Telescope's
+         Payload/Headers/Queries/Cache tabs collapsed into a single row. -->
+    <StatPanel v-if="allTabs.length">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="inline-flex flex-wrap gap-1">
+          <button
+            v-for="tab in allTabs"
+            :key="tab.key"
+            type="button"
+            class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
+            :class="
+              activeTab === tab.key
+                ? 'bg-primary-100 text-primary-700 dark:bg-primary-500/15 dark:text-primary-400'
+                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+            "
+            @click="selectTab(tab.key)"
+          >{{ tab.label }}</button>
+        </div>
         <button
-          v-for="tab in tabs"
-          :key="tab.resource"
+          v-if="activePanel"
           type="button"
-          class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
-          :class="
-            activeTab === tab.resource
-              ? 'bg-primary-100 text-primary-700 dark:bg-primary-500/15 dark:text-primary-400'
-              : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-          "
-          @click="selectTab(tab.resource)"
-        >{{ resourceLabel(tab.resource) }} ({{ tab.count }})</button>
+          class="shrink-0 text-xs text-primary-600 dark:text-primary-400"
+          @click="copyField(activePanel.key, activePanel.raw)"
+        >{{ copiedField === activePanel.key ? 'Copied!' : 'Copy' }}</button>
       </div>
 
-      <div class="overflow-x-auto">
+      <p v-if="activePanel?.subtitle" class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ activePanel.subtitle }}</p>
+
+      <!-- Blob tab: JSON tree, or a <pre> fallback when it isn't JSON -->
+      <template v-if="activePanel">
+        <div v-if="activePanel.parsed" class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs dark:bg-gray-800">
+          <JsonViewer :data="activePanel.parsed" />
+        </div>
+        <pre v-else class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">{{ activePanel.raw }}</pre>
+      </template>
+
+      <!-- Related tab: that resource's correlated rows -->
+      <div v-else class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
           <thead>
             <tr>

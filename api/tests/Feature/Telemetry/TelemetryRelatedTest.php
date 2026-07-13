@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Telemetry;
 
+use App\Models\Telemetry\CacheEvent;
 use App\Models\Telemetry\Issue;
 use App\Models\Telemetry\JobRecord;
 use App\Models\Telemetry\LogRecord;
@@ -24,7 +25,7 @@ class TelemetryRelatedTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['nightowl_requests', 'nightowl_jobs', 'nightowl_queries', 'nightowl_logs', 'nightowl_issues'] as $table) {
+        foreach (['nightowl_requests', 'nightowl_jobs', 'nightowl_queries', 'nightowl_logs', 'nightowl_issues', 'nightowl_cache_events'] as $table) {
             DB::connection('nightowl')->table($table)->delete();
         }
 
@@ -129,6 +130,68 @@ class TelemetryRelatedTest extends TestCase
         $ids = array_column($response->json('data'), 'id');
         sort($ids);
         $this->assertSame($match->pluck('id')->sort()->values()->all(), $ids);
+    }
+
+    public function test_related_shows_sibling_activity_when_viewing_a_query(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['trace_id' => 'trace-req-3']);
+        $query = QueryRecord::factory()->create(['execution_source' => 'request', 'execution_id' => 'trace-req-3']);
+        CacheEvent::factory()->count(2)->create(['execution_source' => 'request', 'execution_id' => 'trace-req-3']);
+        LogRecord::factory()->create(['execution_source' => 'request', 'execution_id' => 'trace-req-3']);
+
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/queries/{$query->id}/related");
+
+        $response->assertOk()
+            ->assertJsonPath('children_filter.execution_source', 'request')
+            ->assertJsonPath('children_filter.execution_id', 'trace-req-3')
+            ->assertJsonPath('children.cache-events', 2)
+            ->assertJsonPath('children.logs', 1);
+        $this->assertArrayNotHasKey('queries', $response->json('children'));
+    }
+
+    public function test_related_excludes_itself_when_counting_same_resource_type_siblings(): void
+    {
+        $user = User::factory()->create();
+        $queries = QueryRecord::factory()->count(3)->create([
+            'execution_source' => 'request',
+            'execution_id' => 'trace-req-4',
+        ]);
+        $viewed = $queries->first();
+
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/queries/{$viewed->id}/related");
+
+        $response->assertOk()->assertJsonPath('children.queries', 2);
+    }
+
+    public function test_related_shows_siblings_for_a_job_dispatch_event_row(): void
+    {
+        $user = User::factory()->create();
+        RequestRecord::factory()->create(['trace_id' => 'trace-req-5']);
+
+        // The row written when a job is *dispatched* is a child of whatever
+        // queued it (execution_source/execution_id set, no attempt_id) —
+        // distinct from a *processed* attempt row, which is an origin.
+        $dispatchEvent = JobRecord::factory()->create([
+            'status' => 'queued',
+            'attempt_id' => null,
+            'execution_source' => 'request',
+            'execution_id' => 'trace-req-5',
+        ]);
+        JobRecord::factory()->count(2)->create([
+            'status' => 'queued',
+            'attempt_id' => null,
+            'execution_source' => 'request',
+            'execution_id' => 'trace-req-5',
+        ]);
+        QueryRecord::factory()->create(['execution_source' => 'request', 'execution_id' => 'trace-req-5']);
+
+        $response = $this->actingAs($user)->getJson("/api/apps/test_app/jobs/{$dispatchEvent->id}/related");
+
+        $response->assertOk()
+            ->assertJsonPath('origin.resource', 'requests')
+            ->assertJsonPath('children.jobs', 2)
+            ->assertJsonPath('children.queries', 1);
     }
 
     public function test_related_is_empty_for_a_non_traceable_resource(): void

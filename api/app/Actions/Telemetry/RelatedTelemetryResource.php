@@ -82,23 +82,41 @@ class RelatedTelemetryResource
         }
 
         $childrenFilter = null;
-        $children = [];
 
         if (isset($config['parent_key']) && $record->{$config['parent_key']} !== null) {
+            // Origin record (request/command/scheduled-task, or a processed
+            // job attempt): its own identity column is what children point at.
             $childrenFilter = [
                 'execution_source' => $config['parent_source'],
                 'execution_id' => $record->{$config['parent_key']},
             ];
+        } elseif (($config['traces_to_parent'] ?? false) && $record->execution_source && $record->execution_id) {
+            // Child record (query/cache-event/mail/notification/log/
+            // exception/outgoing-request, or a job dispatch-event): siblings
+            // share this record's own execution_source/execution_id.
+            $childrenFilter = [
+                'execution_source' => $record->execution_source,
+                'execution_id' => $record->execution_id,
+            ];
+        }
 
+        $children = [];
+
+        if ($childrenFilter !== null) {
             foreach (config('telemetry.resources') as $key => $cfg) {
-                if (! ($cfg['traces_to_parent'] ?? false) || $key === $resource) {
+                if (! ($cfg['traces_to_parent'] ?? false)) {
                     continue;
                 }
 
-                $count = $cfg['model']::where('app_id', $appId)
+                $query = $cfg['model']::where('app_id', $appId)
                     ->where('execution_source', $childrenFilter['execution_source'])
-                    ->where('execution_id', $childrenFilter['execution_id'])
-                    ->count();
+                    ->where('execution_id', $childrenFilter['execution_id']);
+
+                if ($key === $resource) {
+                    $query->where($record->getKeyName(), '!=', $record->getKey());
+                }
+
+                $count = $query->count();
 
                 if ($count > 0) {
                     $children[$key] = $count;

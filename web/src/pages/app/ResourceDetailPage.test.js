@@ -41,10 +41,13 @@ const logsPage = {
   current_page: 1, last_page: 1, per_page: 25, total: 1,
 }
 
+const userDetail = { user: { id: 'u1', name: 'Alice', email: 'alice@example.com' } }
+
 function apiImpl({ recordData = record, relatedData = related } = {}) {
   return (url) => {
     if (url === '/api/apps/app1/requests/1') return Promise.resolve({ data: recordData })
     if (url === '/api/apps/app1/requests/1/related') return Promise.resolve({ data: relatedData })
+    if (url === '/api/apps/app1/users/u1') return Promise.resolve({ data: userDetail })
     if (url === '/api/apps/app1/queries') return Promise.resolve({ data: queriesPage })
     if (url === '/api/apps/app1/logs') return Promise.resolve({ data: logsPage })
     return Promise.reject(new Error(`unexpected url ${url}`))
@@ -94,63 +97,71 @@ describe('ResourceDetailPage', () => {
     // internal fields never rendered
     expect(wrapper.text()).not.toContain('group_hash')
 
-    // Authenticated User panel
+    // Authenticated User panel — id link plus the email fetched from /users/u1
     expect(wrapper.text()).toContain('Authenticated User')
     const userLink = wrapper.findAll('a').find((a) => a.text() === 'u1')
     expect(userLink).toBeTruthy()
     expect(userLink.attributes('href')).toBe('/dashboard/app1/users/u1')
+    expect(wrapper.text()).toContain('Email Address')
+    expect(wrapper.text()).toContain('alice@example.com')
   })
 
-  it('renders a JSON blob field as an expandable tree and a non-JSON field as a <pre> fallback', async () => {
+  it('defaults to the first blob tab as a JSON tree, and switching to a non-JSON blob tab shows a <pre> fallback', async () => {
     const { wrapper } = await mountPage()
 
-    // Payload parses as JSON -> JsonViewer tree (renders as <details>/<summary>)
+    // Payload is the first blob field present on the record -> selected by
+    // default, and it parses as JSON -> JsonViewer tree (<details>/<summary>).
     expect(wrapper.findAll('details').length).toBeGreaterThan(0)
     expect(wrapper.text()).toContain('foo')
     expect(wrapper.text()).toContain('"bar"')
+    expect(wrapper.find('pre').exists()).toBe(false)
 
-    // Headers is plain text -> <pre> fallback
+    // Switch to the Request Headers tab: plain text, not JSON -> <pre> fallback.
+    await wrapper.findAll('button').find((b) => b.text() === 'Request Headers').trigger('click')
+    await flushPromises()
+
     const pre = wrapper.find('pre')
     expect(pre.exists()).toBe(true)
     expect(pre.text()).toContain('X-Test: 1')
   })
 
-  it('renders the Related tab bar with counts, auto-loads the first tab, and can switch tabs', async () => {
+  it('lists blob fields and related resources in one tab strip; a related tab lazily fetches on first select', async () => {
     const { wrapper } = await mountPage()
 
     const buttons = wrapper.findAll('button')
+    expect(buttons.find((b) => b.text() === 'Payload')).toBeTruthy()
+    expect(buttons.find((b) => b.text() === 'Request Headers')).toBeTruthy()
     expect(buttons.find((b) => b.text() === 'Queries (2)')).toBeTruthy()
     expect(buttons.find((b) => b.text() === 'Logs (1)')).toBeTruthy()
 
-    // First tab auto-selected and fetched with the execution_source/id filter.
-    expect(api.get.mock.calls[2][0]).toBe('/api/apps/app1/queries')
-    expect(api.get.mock.calls[2][1].params).toMatchObject({
-      execution_source: 'request',
-      execution_id: 'trace-1',
-      period: '1h',
-    })
-    expect(wrapper.findAll('tbody').at(-1).text()).toContain('select * from orders')
+    // Related tabs aren't fetched until selected — only record/related/user email so far.
+    expect(api.get.mock.calls.some(([url]) => url === '/api/apps/app1/queries')).toBe(false)
 
-    const logsTab = buttons.find((b) => b.text() === 'Logs (1)')
-    await logsTab.trigger('click')
+    await buttons.find((b) => b.text() === 'Queries (2)').trigger('click')
     await flushPromises()
 
-    expect(api.get.mock.calls[3][0]).toBe('/api/apps/app1/logs')
-    expect(wrapper.findAll('tbody').at(-1).text()).toContain('Something broke')
-    expect(wrapper.findAll('tbody').at(-1).text()).not.toContain('select * from orders')
+    const queriesCall = api.get.mock.calls.find(([url]) => url === '/api/apps/app1/queries')
+    expect(queriesCall).toBeTruthy()
+    expect(queriesCall[1].params).toMatchObject({ execution_source: 'request', execution_id: 'trace-1', period: '1h' })
+    expect(wrapper.text()).toContain('select * from orders')
+    // Switching away from Payload hides its tree.
+    expect(wrapper.text()).not.toContain('"bar"')
   })
 
-  it('does not refetch a tab that was already loaded (lazy + cached)', async () => {
+  it('does not refetch a related tab that was already loaded (lazy + cached)', async () => {
     const { wrapper } = await mountPage()
-    const buttons = wrapper.findAll('button')
-
-    await buttons.find((b) => b.text() === 'Logs (1)').trigger('click')
-    await flushPromises()
-    expect(api.get).toHaveBeenCalledTimes(4)
 
     await wrapper.findAll('button').find((b) => b.text() === 'Queries (2)').trigger('click')
     await flushPromises()
-    expect(api.get).toHaveBeenCalledTimes(4)
+    expect(api.get.mock.calls.filter(([url]) => url === '/api/apps/app1/queries')).toHaveLength(1)
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Logs (1)').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === 'Queries (2)').trigger('click')
+    await flushPromises()
+
+    expect(api.get.mock.calls.filter(([url]) => url === '/api/apps/app1/queries')).toHaveLength(1)
+    expect(api.get.mock.calls.filter(([url]) => url === '/api/apps/app1/logs')).toHaveLength(1)
   })
 
   it('shows a not-found state for a nonexistent record id', async () => {
