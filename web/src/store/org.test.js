@@ -34,6 +34,38 @@ describe('reset', () => {
   })
 })
 
+describe('fetchOrg', () => {
+  it('self-heals a stale currentOrgUuid that 404s by retrying without org and clearing it', async () => {
+    localStorage.setItem(CURRENT_ORG_KEY, 'stale-org-uuid')
+    const fallbackOrg = { uuid: 'my-real-org-uuid', name: 'My Org' }
+    api.get.mockImplementation((url, config) => {
+      if (url === '/api/apps' && config?.params?.org === 'stale-org-uuid') {
+        return Promise.reject({ response: { status: 404 } })
+      }
+      if (url === '/api/apps' && !config?.params?.org) {
+        return Promise.resolve({ data: { org: fallbackOrg, teams: [] } })
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    const org = useOrgStore()
+    expect(org.currentOrgUuid).toBe('stale-org-uuid')
+
+    await org.fetchOrg()
+
+    expect(org.org).toEqual(fallbackOrg)
+    expect(org.currentOrgUuid).toBe(fallbackOrg.uuid)
+    expect(localStorage.getItem(CURRENT_ORG_KEY)).toBe(fallbackOrg.uuid)
+  })
+
+  it('does not swallow non-404 errors', async () => {
+    localStorage.setItem(CURRENT_ORG_KEY, 'some-org-uuid')
+    api.get.mockRejectedValue({ response: { status: 500 } })
+    const org = useOrgStore()
+
+    await expect(org.fetchOrg()).rejects.toEqual({ response: { status: 500 } })
+  })
+})
+
 describe('createOrg', () => {
   it('posts the new org, appends it to orgs, and switches to it', async () => {
     const newOrg = { uuid: 'org-new-uuid', name: 'New Org', account_email: 'new@example.com' }

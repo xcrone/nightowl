@@ -31,9 +31,28 @@ export const useOrgStore = defineStore('org', {
     },
 
     async fetchOrg() {
-      const apps = await api.get('/api/apps', {
-        params: this.currentOrgUuid ? { org: this.currentOrgUuid } : {},
-      })
+      let apps
+      try {
+        apps = await api.get('/api/apps', {
+          params: this.currentOrgUuid ? { org: this.currentOrgUuid } : {},
+        })
+      } catch (e) {
+        // A stale currentOrgUuid (left over from a previous session/user on
+        // this browser — cleared on logout, but nothing guards a browser
+        // that never went through a clean logout) can point at a real org
+        // the current user isn't a member of; the server 404s deliberately
+        // rather than substituting silently (see ListApps). Self-heal the
+        // same way an unknown/removed org UUID already does below: drop it
+        // and retry without `org`, so the user falls back to their own org
+        // instead of the page reading this as "you have zero orgs".
+        if (e?.response?.status === 404 && this.currentOrgUuid) {
+          this.currentOrgUuid = null
+          localStorage.removeItem(CURRENT_ORG_KEY)
+          apps = await api.get('/api/apps')
+        } else {
+          throw e
+        }
+      }
       this.org = apps.data.org ?? null
       this.teams = apps.data.teams ?? []
       // The server may fall back to a different org than requested (e.g. a

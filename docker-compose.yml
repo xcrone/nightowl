@@ -79,6 +79,10 @@ services:
       NIGHTOWL_DB_DATABASE: ${NIGHTOWL_DB_DATABASE:-nightowl}
       NIGHTOWL_DB_USERNAME: ${NIGHTOWL_DB_USERNAME:-nightowl}
       NIGHTOWL_DB_PASSWORD: ${NIGHTOWL_DB_PASSWORD:-nightowl}
+      # Wire-protocol auth token — must match the dashboard app's agent_token
+      # (Settings > Regenerate) and the instrumented app's NIGHTWATCH_TOKEN.
+      # Unset = no auth (any tokenHash accepted) and app_id never resolves.
+      NIGHTOWL_TOKEN: ${NIGHTOWL_TOKEN:-}
     ports:
       # 2407 (TCP ingest) stays reachable from adam-app via the shared Docker
       # network regardless of this host-side mapping (container-to-container
