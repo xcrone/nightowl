@@ -47,6 +47,7 @@ final class DrainWorkerCommand extends Command
             environment: config('nightowl.environment') ?: config('app.env', 'production'),
             sslmode: config('nightowl.database.sslmode', 'prefer'),
             quarantineEnabled: (bool) config('nightowl.agent.drain_quarantine_enabled', false),
+            appId: config('nightowl.agent.app_id'),
         );
 
         $worker->setWorkerConfig($workerId, $totalWorkers);

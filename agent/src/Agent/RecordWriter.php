@@ -86,6 +86,7 @@ final class RecordWriter
         private string $appName = 'NightOwl',
         private string $environment = 'production',
         private string $sslmode = 'prefer',
+        private ?string $appId = null,
     ) {
         $this->notifier = $notifier ?? new AlertNotifier;
     }
@@ -157,6 +158,7 @@ final class RecordWriter
             // the config key so `php artisan config:cache` doesn't nuke it.
             config('nightowl.environment') ?: config('app.env', 'production'),
             config('nightowl.database.sslmode', 'prefer'),
+            config('nightowl.agent.app_id'),
         );
     }
 
@@ -630,7 +632,7 @@ final class RecordWriter
             'exceptions', 'logs', 'queries',
             'jobs_queued', 'mail', 'notifications', 'outgoing_requests',
             'cache_events', 'peak_memory_usage',
-            'exception_preview', 'context', 'headers', 'payload', 'created_at',
+            'exception_preview', 'context', 'headers', 'payload', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -677,6 +679,7 @@ final class RecordWriter
                 is_string($r['headers'] ?? null) ? $r['headers'] : json_encode($r['headers'] ?? null),
                 is_string($r['payload'] ?? null) ? $r['payload'] : json_encode($r['payload'] ?? null),
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -700,7 +703,7 @@ final class RecordWriter
         $columns = [
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server', 'group_hash',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
-            'sql_query', 'file', 'line', 'duration', 'connection', 'connection_type', 'created_at',
+            'sql_query', 'file', 'line', 'duration', 'connection', 'connection_type', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -725,6 +728,7 @@ final class RecordWriter
                 $r['connection'] ?? null,
                 $r['connection_type'] ?? null,
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1096,12 +1100,12 @@ final class RecordWriter
             v, trace_id, timestamp, deploy, environment, server, group_hash,
             execution_source, execution_id, execution_stage, execution_preview, user_id,
             class, message, code, file, line, trace,
-            php_version, laravel_version, handled, fingerprint, created_at
+            php_version, laravel_version, handled, fingerprint, created_at, app_id
         ) VALUES (
             :v, :trace_id, :timestamp, :deploy, :environment, :server, :group_hash,
             :execution_source, :execution_id, :execution_stage, :execution_preview, :user_id,
             :class, :message, :code, :file, :line, :trace,
-            :php_version, :laravel_version, :handled, :fingerprint, :created_at
+            :php_version, :laravel_version, :handled, :fingerprint, :created_at, :app_id
         )');
 
         // Stamp created_at as an explicit UTC string rather than relying on the
@@ -1149,6 +1153,7 @@ final class RecordWriter
                 'handled' => filter_var($r['handled'] ?? false, FILTER_VALIDATE_BOOLEAN) ? 't' : 'f',
                 'fingerprint' => $fingerprint,
                 'created_at' => $this->eventCreatedAt($r, $nowTs),
+                'app_id' => $this->appId,
             ]);
 
             if (! isset($issueGroups[$groupKey])) {
@@ -1190,11 +1195,11 @@ final class RecordWriter
             INSERT INTO nightowl_issues (
                 type, deploy, environment, status, exception_class, exception_message, group_hash,
                 first_seen_at, last_seen_at, occurrences_count, users_count,
-                created_at, updated_at
+                created_at, updated_at, app_id
             ) VALUES (
                 :type, :deploy, :environment, :status, :exception_class, :exception_message, :group_hash,
                 :first_seen_at, :last_seen_at, :occurrences_count, :users_count,
-                :created_at, :updated_at
+                :created_at, :updated_at, :app_id
             )
             ON CONFLICT (group_hash, type, environment) DO UPDATE SET
                 exception_message = EXCLUDED.exception_message,
@@ -1211,7 +1216,8 @@ final class RecordWriter
                         THEN \'open\'
                     ELSE nightowl_issues.status
                 END,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                app_id = EXCLUDED.app_id
         ');
 
         $now = gmdate('Y-m-d H:i:s');
@@ -1238,6 +1244,7 @@ final class RecordWriter
                 'created_at' => $now,
                 'updated_at' => $now,
                 'should_reopen' => isset($reopenIds[$key]) ? 'true' : 'false',
+                'app_id' => $this->appId,
             ]);
         }
 
@@ -1256,7 +1263,7 @@ final class RecordWriter
             'bootstrap', 'action', 'terminating',
             'exceptions', 'logs', 'queries',
             'jobs_queued', 'mail', 'notifications', 'outgoing_requests',
-            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at',
+            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1272,6 +1279,7 @@ final class RecordWriter
                 $r['cache_events'] ?? 0, $r['peak_memory_usage'] ?? 0, $r['exception_preview'] ?? null,
                 is_string($r['context'] ?? null) ? $r['context'] : json_encode($r['context'] ?? null),
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1291,7 +1299,7 @@ final class RecordWriter
             'job_class', 'queue', 'connection', 'status', 'duration', 'attempts',
             'exceptions', 'logs', 'queries',
             'jobs_queued', 'mail', 'notifications', 'outgoing_requests',
-            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at',
+            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1309,6 +1317,7 @@ final class RecordWriter
                 $r['cache_events'] ?? 0, $r['peak_memory_usage'] ?? 0, $r['exception_preview'] ?? null,
                 is_string($r['context'] ?? null) ? $r['context'] : json_encode($r['context'] ?? null),
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1328,7 +1337,7 @@ final class RecordWriter
         $columns = [
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server', 'group_hash',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
-            'event_type', 'key', 'store', 'ttl', 'duration', 'created_at',
+            'event_type', 'key', 'store', 'ttl', 'duration', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1339,6 +1348,7 @@ final class RecordWriter
                 $r['execution_source'] ?? null, $r['execution_id'] ?? null, $r['execution_stage'] ?? null, $r['execution_preview'] ?? null, $r['user'] ?? null,
                 $r['type'] ?? 'unknown', $r['key'] ?? '', $r['store'] ?? null, $r['ttl'] ?? null, $r['duration'] ?? null,
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1360,7 +1370,7 @@ final class RecordWriter
         $columns = [
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server', 'group_hash',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
-            'mailer', 'recipients', 'cc', 'bcc', 'attachments', 'subject', 'mailable', 'duration', 'failed', 'queued', 'created_at',
+            'mailer', 'recipients', 'cc', 'bcc', 'attachments', 'subject', 'mailable', 'duration', 'failed', 'queued', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1374,6 +1384,7 @@ final class RecordWriter
                 $r['subject'] ?? null, $r['class'] ?? $r['mailable'] ?? null, $r['duration'] ?? null,
                 ($r['failed'] ?? false) ? 't' : 'f', ($r['queued'] ?? false) ? 't' : 'f',
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1391,7 +1402,7 @@ final class RecordWriter
         $columns = [
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server', 'group_hash',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
-            'notification', 'channel', 'notifiable_type', 'notifiable_id', 'duration', 'failed', 'queued', 'created_at',
+            'notification', 'channel', 'notifiable_type', 'notifiable_id', 'duration', 'failed', 'queued', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1403,6 +1414,7 @@ final class RecordWriter
                 $r['class'] ?? $r['notification'] ?? null, $r['channel'] ?? null, $r['notifiable_type'] ?? null, $r['notifiable_id'] ?? null,
                 $r['duration'] ?? null, ($r['failed'] ?? false) ? 't' : 'f', ($r['queued'] ?? false) ? 't' : 'f',
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1419,7 +1431,7 @@ final class RecordWriter
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server', 'group_hash',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
             'host', 'method', 'url', 'status_code', 'duration',
-            'request_size', 'response_size', 'request_headers', 'created_at',
+            'request_size', 'response_size', 'request_headers', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1431,6 +1443,7 @@ final class RecordWriter
                 $r['host'] ?? null, $r['method'] ?? 'GET', $r['url'] ?? '', $r['status_code'] ?? null, $r['duration'] ?? null,
                 $r['request_size'] ?? null, $r['response_size'] ?? null, $r['request_headers'] ?? null,
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1448,7 +1461,7 @@ final class RecordWriter
         $columns = [
             'v', 'trace_id', 'timestamp', 'deploy', 'environment', 'server',
             'execution_source', 'execution_id', 'execution_stage', 'execution_preview', 'user_id',
-            'level', 'message', 'context', 'extra', 'channel', 'created_at',
+            'level', 'message', 'context', 'extra', 'channel', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1462,6 +1475,7 @@ final class RecordWriter
                 is_string($r['extra'] ?? null) ? $r['extra'] : json_encode($r['extra'] ?? null),
                 $r['channel'] ?? null,
                 isset($r['timestamp']) ? gmdate('Y-m-d H:i:s', (int) $r['timestamp']) : gmdate('Y-m-d H:i:s'),
+                $this->appId,
             ];
         }
 
@@ -1474,14 +1488,15 @@ final class RecordWriter
         // created_at is set on first insert only (DO UPDATE leaves it untouched),
         // stamped in UTC rather than via the column's session-tz useCurrent() default.
         $stmt = $this->pdo()->prepare('
-            INSERT INTO nightowl_users (v, user_id, name, email, timestamp, created_at, updated_at)
-            VALUES (:v, :user_id, :name, :email, :timestamp, :created_at, :updated_at)
+            INSERT INTO nightowl_users (v, user_id, name, email, timestamp, created_at, updated_at, app_id)
+            VALUES (:v, :user_id, :name, :email, :timestamp, :created_at, :updated_at, :app_id)
             ON CONFLICT (user_id) DO UPDATE SET
                 v = EXCLUDED.v,
                 name = EXCLUDED.name,
                 email = EXCLUDED.email,
                 timestamp = EXCLUDED.timestamp,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                app_id = EXCLUDED.app_id
         ');
 
         $now = gmdate('Y-m-d H:i:s');
@@ -1500,6 +1515,7 @@ final class RecordWriter
                 'timestamp' => $r['timestamp'] ?? null,
                 'created_at' => $now,
                 'updated_at' => $now,
+                'app_id' => $this->appId,
             ]);
         }
     }
@@ -1517,7 +1533,7 @@ final class RecordWriter
             'status', 'duration', 'exit_code',
             'exceptions', 'logs', 'queries',
             'jobs_queued', 'mail', 'notifications', 'outgoing_requests',
-            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at',
+            'cache_events', 'peak_memory_usage', 'exception_preview', 'context', 'created_at', 'app_id',
         ];
 
         $rows = [];
@@ -1536,6 +1552,7 @@ final class RecordWriter
                 $r['cache_events'] ?? 0, $r['peak_memory_usage'] ?? 0, $r['exception_preview'] ?? null,
                 is_string($r['context'] ?? null) ? $r['context'] : json_encode($r['context'] ?? null),
                 $this->eventCreatedAt($r, $nowTs),
+                $this->appId,
             ];
         }
 
@@ -1793,12 +1810,12 @@ final class RecordWriter
                 type, deploy, environment, subtype, status, exception_class, exception_message, group_hash,
                 first_seen_at, last_seen_at, occurrences_count, users_count,
                 threshold_ms, triggered_duration_ms,
-                created_at, updated_at
+                created_at, updated_at, app_id
             ) VALUES (
                 :type, :deploy, :environment, :subtype, :status, :exception_class, :exception_message, :group_hash,
                 :first_seen_at, :last_seen_at, :occurrences_count, :users_count,
                 :threshold_ms, :triggered_duration_ms,
-                :created_at, :updated_at
+                :created_at, :updated_at, :app_id
             )
             ON CONFLICT (group_hash, type, environment) DO UPDATE SET
                 subtype = COALESCE(EXCLUDED.subtype, nightowl_issues.subtype),
@@ -1815,7 +1832,8 @@ final class RecordWriter
                         THEN \'open\'
                     ELSE nightowl_issues.status
                 END,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                app_id = EXCLUDED.app_id
         ');
 
         $now = gmdate('Y-m-d H:i:s');
@@ -1850,6 +1868,7 @@ final class RecordWriter
                 'created_at' => $now,
                 'updated_at' => $now,
                 'should_reopen' => isset($reopenIds[$key]) ? 'true' : 'false',
+                'app_id' => $this->appId,
             ]);
         }
 

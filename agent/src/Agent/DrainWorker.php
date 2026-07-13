@@ -108,6 +108,7 @@ final class DrainWorker
         private string $appName = 'NightOwl',
         private string $environment = 'production',
         private string $sslmode = 'prefer',
+        private ?string $appId = null,
         // Knobs the chaos test tunes; defaults match prior hardcoded behavior.
         private int $checkpointIntervalSeconds = 60,
         private int $checkpointTruncateBytes = 100 * 1024 * 1024,
@@ -168,6 +169,7 @@ final class DrainWorker
             appName: $this->appName,
             environment: $this->environment,
             sslmode: $this->sslmode,
+            appId: $this->appId,
         );
 
         $workerLabel = $this->totalWorkers > 1
