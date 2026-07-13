@@ -158,6 +158,15 @@ describe('AggregateDetailPage', () => {
     expect(body).toContain('read')
   })
 
+  it('navigates to the record detail page when an occurrence row is clicked', async () => {
+    const { wrapper, router } = await mountPage()
+    const row = wrapper.find('tbody tr')
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/dashboard/app1/requests/record/1')
+  })
+
   it('ignores a stale response that resolves after a newer one (latest-wins)', async () => {
     const resolvers = []
     api.get.mockImplementation(() => new Promise((res) => resolvers.push(res)))

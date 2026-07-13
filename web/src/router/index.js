@@ -17,6 +17,7 @@ import ScheduledTasksPage from '../pages/app/ScheduledTasksPage.vue'
 import ExceptionsPage from '../pages/app/ExceptionsPage.vue'
 import ExceptionDetailPage from '../pages/app/ExceptionDetailPage.vue'
 import AggregateDetailPage from '../pages/app/AggregateDetailPage.vue'
+import ResourceDetailPage from '../pages/app/ResourceDetailPage.vue'
 import QueriesPage from '../pages/app/QueriesPage.vue'
 import NotificationsPage from '../pages/app/NotificationsPage.vue'
 import MailPage from '../pages/app/MailPage.vue'
@@ -67,6 +68,14 @@ const router = createRouter({
           path: ':resource(requests|outgoing-requests|jobs|commands|scheduled-tasks|queries|notifications|mail)/:key',
           name: 'aggregate-detail',
           component: AggregateDetailPage,
+        },
+        // Single-record detail (Telescope-style request-detail page) behind an
+        // aggregate's Occurrences table / a Related tab row. A 3-segment path
+        // so it can never shadow the 2-segment aggregate-detail route above.
+        {
+          path: ':resource(requests|outgoing-requests|jobs|commands|scheduled-tasks|queries|notifications|mail|logs|cache-events|exceptions)/record/:id',
+          name: 'resource-detail',
+          component: ResourceDetailPage,
         },
       ],
     },

@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
 import { aggregateConfig } from '../../aggregateConfig'
@@ -17,6 +17,7 @@ import JsonViewer from '../../components/JsonViewer.vue'
 // they stay visually identical to the parent list page.
 // GET /api/apps/{appId}/aggregate/{resource}/{key}?period&bucket&outcome&…
 const route = useRoute()
+const router = useRouter()
 const app = useAppStore()
 
 const appId = computed(() => route.params.appId)
@@ -241,6 +242,12 @@ function cellValue(col, row) {
   }
   return null
 }
+// Row-level drill-down: each raw occurrence links to its own single-record
+// detail page (ResourceDetailPage), the click-through point required to
+// reach that page from anywhere in the aggregate views.
+function recordLink(row) {
+  return row.id ? `/dashboard/${appId.value}/${resource.value}/record/${row.id}` : null
+}
 function cellDisplay(col, row) {
   const value = cellValue(col, row)
   if (value === null || value === '') return '—'
@@ -420,7 +427,13 @@ watch(
                 No records found. Try adjusting any filters or time range.
               </td>
             </tr>
-            <tr v-for="(row, i) in state.occurrences" v-else :key="row.id ?? i">
+            <tr
+              v-for="(row, i) in state.occurrences"
+              v-else
+              :key="row.id ?? i"
+              class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+              @click="recordLink(row) && router.push(recordLink(row))"
+            >
               <td
                 v-for="col in occurrenceMeta.columns"
                 :key="col.label"
