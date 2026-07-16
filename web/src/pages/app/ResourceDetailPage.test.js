@@ -32,7 +32,7 @@ const related = {
 }
 
 const queriesPage = {
-  data: [{ id: 10, created_at: new Date().toISOString(), sql_query: 'select * from orders', connection: 'pgsql', duration: 500 }],
+  data: [{ id: 10, created_at: '2026-07-16T15:04:05Z', sql_query: 'select * from orders', connection: 'pgsql', duration: 500 }],
   current_page: 1, last_page: 1, per_page: 25, total: 1,
 }
 
@@ -162,6 +162,19 @@ describe('ResourceDetailPage', () => {
 
     expect(api.get.mock.calls.filter(([url]) => url === '/api/apps/app1/queries')).toHaveLength(1)
     expect(api.get.mock.calls.filter(([url]) => url === '/api/apps/app1/logs')).toHaveLength(1)
+  })
+
+  it("renders a related row's datetime cell in the timezone held in the app store", async () => {
+    // The page mounts with the store's timezone pinned to 'UTC' / '24h'.
+    const { wrapper } = await mountPage()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Queries (2)').trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('select * from orders'))
+    expect(row).toBeTruthy()
+    expect(row.text()).toContain('15:04:05')
+    expect(row.text()).not.toMatch(/\b[AP]M\b/i)
   })
 
   it('shows a not-found state for a nonexistent record id', async () => {

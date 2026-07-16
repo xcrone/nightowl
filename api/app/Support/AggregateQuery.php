@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -60,11 +61,8 @@ class AggregateQuery
             foreach ($config['distinct_count'] ?? [] as $alias => $col) {
                 $expr[] = "COUNT(DISTINCT {$col}) as {$alias}";
             }
-            if ($lastCol = $config['last'] ?? null) {
-                // Default alias is last_<col>; 'last_alias' overrides it so the
-                // row field matches the contract (e.g. last_sent / last_seen).
-                $alias = $config['last_alias'] ?? "last_{$lastCol}";
-                $expr[] = "MAX({$lastCol}) as {$alias}";
+            if ($alias = self::lastAlias($config)) {
+                $expr[] = "MAX({$config['last']}) as {$alias}";
             }
         }
 
@@ -92,6 +90,51 @@ class AggregateQuery
     private static function latestValueSql(string $col, string $as): string
     {
         return "(array_agg({$col} order by created_at desc, id desc))[1] as {$as}";
+    }
+
+    /**
+     * The row field a config's MAX(<last>) lands under: the default is
+     * last_<col>, and 'last_alias' overrides it so the field matches the
+     * contract (e.g. last_triggered / last_sent / last_seen). Shared by
+     * selectExpressions() (which emits the alias) and normalizeRow() (which
+     * normalizes its value) so the two can never drift apart.
+     */
+    private static function lastAlias(array $config): ?string
+    {
+        if (! ($lastCol = $config['last'] ?? null)) {
+            return null;
+        }
+
+        return $config['last_alias'] ?? "last_{$lastCol}";
+    }
+
+    /**
+     * Serialize an aggregate's MAX(<timestamp>) to ISO 8601 with an explicit zone.
+     *
+     * Aggregate rows come off the raw query builder, so PDO hands back the naive
+     * `Y-m-d H:i:s` string of a `timestamp without time zone` column verbatim —
+     * unlike every Eloquent path, where Carbon casting + serializeDate() already
+     * emit ISO. The SPA does `new Date(value)` on these, and V8 parses a
+     * zone-less, space-separated string as LOCAL time, so an unstamped value
+     * silently skews by the viewer's UTC offset.
+     *
+     * Postgres runs UTC and the column carries no zone, so a naive value IS UTC:
+     * it's parsed with UTC passed explicitly rather than letting Carbon fall back
+     * to PHP's ambient timezone (or config('app.timezone')). A value that already
+     * carries a zone — or is a DateTime — keeps its own instant, so this is safe
+     * to apply twice. Null (MAX() over an empty group) stays null.
+     */
+    public static function toIso8601(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value)->toIso8601String();
+        }
+
+        return Carbon::parse($value, 'UTC')->toIso8601String();
     }
 
     /** Internal SELECT alias for a 'representative_bool' column pre-promotion (see normalizeRow). */
@@ -228,6 +271,12 @@ class AggregateQuery
             if (array_key_exists($alias, $row)) {
                 $row[$alias] = $row[$alias] ? explode(',', $row[$alias]) : [];
             }
+        }
+        // The MAX(<last>) alias arrives as a naive `Y-m-d H:i:s` string (raw
+        // query builder, zone-less column) — stamp it as the UTC instant it is.
+        // Only touched when present: the ungrouped panels row never selects it.
+        if (($lastAlias = self::lastAlias($config)) && array_key_exists($lastAlias, $row)) {
+            $row[$lastAlias] = self::toIso8601($row[$lastAlias]);
         }
         // Cache hit rate convenience.
         if (isset($row['hits'], $row['misses'])) {

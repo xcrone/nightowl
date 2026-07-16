@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
@@ -21,8 +21,8 @@ const rows = [
   },
 ]
 
-async function mountPage(appState = {}) {
-  api.get.mockResolvedValue({ data: { data: rows, last_page: 1 } })
+async function mountPage(appState = {}, rowsData = rows) {
+  api.get.mockResolvedValue({ data: { data: rowsData, last_page: 1 } })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -84,4 +84,58 @@ describe('IssuesPage', () => {
     await cells[cells.length - 1].trigger('click') // Assigned
     expect(push).not.toHaveBeenCalled()
   })
+})
+
+// First seen / Last seen were relative ("10d ago"), which ignores the top-bar
+// timezone selector by design. They must render absolute and follow the store.
+describe('IssuesPage timestamps', () => {
+  const INSTANT = '2026-07-16T15:04:05Z'
+  const FIRST = '2026-07-14T09:30:00Z'
+  const timedRows = [{ ...rows[0], first_seen_at: FIRST, last_seen_at: INSTANT }]
+  // Pinned so the buggy relative rendering is a deterministic "4h ago" rather
+  // than "just now"/"Nh ago" depending on the real instant the suite runs at.
+  const NOW = '2026-07-16T20:00:00Z'
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(NOW))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  // Column order: ID, Priority, Issue, Count, Users, First Seen, Last Seen, Assigned
+  const seenCells = (wrapper) => {
+    const cells = wrapper.findAll('tbody td')
+    return { first: cells[5], last: cells[6] }
+  }
+
+  it('renders First seen / Last seen absolutely in the store timezone (UTC)', async () => {
+    const { wrapper } = await mountPage({ timezone: 'UTC', timeFormat: '24h' }, timedRows)
+    const { first, last } = seenCells(wrapper)
+
+    expect(last.text()).toContain('15:04:05')
+    expect(first.text()).toContain('09:30:00')
+    expect(last.text()).not.toMatch(/ago/)
+    expect(first.text()).not.toMatch(/ago/)
+  })
+
+  it('honours the 12h time format from the store', async () => {
+    const { wrapper } = await mountPage({ timezone: 'UTC', timeFormat: '12h' }, timedRows)
+    const { last } = seenCells(wrapper)
+
+    expect(last.text()).toMatch(/0?3:04:05/)
+    expect(last.text()).toMatch(/\bPM\b/i)
+  })
+
+  // The Local-vs-UTC contrast is only observable when the ambient TZ isn't UTC.
+  // There's no TZ pinned in vite.config.js, so guard rather than flake on CI.
+  it.skipIf(new Date(INSTANT).getTimezoneOffset() === 0)(
+    'shifts Last seen when the store timezone flips from UTC to Local',
+    async () => {
+      const utc = await mountPage({ timezone: 'UTC', timeFormat: '24h' }, timedRows)
+      const local = await mountPage({ timezone: 'Local', timeFormat: '24h' }, timedRows)
+
+      expect(seenCells(local.wrapper).last.text()).not.toBe(seenCells(utc.wrapper).last.text())
+      expect(seenCells(local.wrapper).last.text()).not.toMatch(/ago/)
+    },
+  )
 })

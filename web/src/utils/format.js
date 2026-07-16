@@ -1,8 +1,3 @@
-export function formatDatetime(value) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString()
-}
-
 // Durations arrive from the API in microseconds (fields not ending in `_ms`).
 // Rendered in the compact "14.31ms" / "1.57s" / "112s" / "0µs" style the
 // reference dashboard uses.
@@ -103,8 +98,11 @@ export function base64UrlEncode(value) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export function formatValue(value, format) {
-  if (format === 'datetime') return formatDatetime(value)
+// `opts` carries the top-bar timezone/time-format toggles for the `datetime`
+// format; callers rendering timestamps must pass them through from the app
+// store, or cells fall back to Local/24h and ignore the selector.
+export function formatValue(value, format, opts = {}) {
+  if (format === 'datetime') return absoluteTime(value, opts)
   if (format === 'duration') return formatDuration(value)
   if (format === 'percent') return formatPercent(value)
   if (format === 'relative') return relativeTime(value)

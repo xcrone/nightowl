@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { formatValue } from '../utils/format'
 import { debounce } from '../utils/debounce'
+import { useAppStore } from '../store/app'
 
 // Presentational workhorse for the aggregated list pages. The parent fetches
 // data (period/scope aware) and passes it in; this component only renders the
@@ -11,7 +12,8 @@ import { debounce } from '../utils/debounce'
 //
 // Column shape:
 //   { key, label,
-//     format?: string | (value, row) => string,   // display
+//     format?: string | (value, row, opts) => string, // display; opts carries the
+//                                                     // top-bar { timezone, format }
 //     badge?: (value, row) => tailwindClassString, // pill background
 //     cellClass?: (value, row) => tailwindClassString, // e.g. slow=red text
 //     sortable?: boolean (default true),
@@ -31,6 +33,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['search', 'sort', 'row-click'])
+
+const app = useAppStore()
 
 const searchText = ref(props.search)
 watch(() => props.search, (v) => { searchText.value = v })
@@ -61,8 +65,9 @@ function onSort(col) {
 
 function display(col, row) {
   const value = row[col.key]
-  if (typeof col.format === 'function') return col.format(value, row)
-  return formatValue(value, col.format)
+  const opts = { timezone: app.timezone, format: app.timeFormat }
+  if (typeof col.format === 'function') return col.format(value, row, opts)
+  return formatValue(value, col.format, opts)
 }
 
 function cellClasses(col, row) {

@@ -13,7 +13,7 @@ function makeRouter() {
   })
 }
 
-function mountTable(props = {}) {
+function mountTable(props = {}, initialState = { app: { timezone: 'UTC', timeFormat: '24h' } }) {
   const router = makeRouter()
   return mount(AggregateTable, {
     props: {
@@ -30,7 +30,7 @@ function mountTable(props = {}) {
       ],
       ...props,
     },
-    global: { plugins: [router, createTestingPinia({ createSpy: vi.fn })] },
+    global: { plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState })] },
   })
 }
 
@@ -86,5 +86,55 @@ describe('AggregateTable', () => {
     const wrapper = mountTable()
     await wrapper.findAll('tbody tr')[0].trigger('click')
     expect(wrapper.emitted('row-click').at(-1)[0]).toMatchObject({ route_path: '/orders' })
+  })
+
+  // resourceConfig declares ~11 `format: 'datetime'` columns that render through
+  // this table, so the top-bar timezone selector has to reach the cells.
+  it("renders a 'datetime' cell in the timezone/time-format held in the app store", () => {
+    const wrapper = mountTable(
+      {
+        columns: [{ key: 'created_at', label: 'Time', format: 'datetime' }],
+        rows: [{ id: 1, created_at: '2026-07-16T15:04:05Z' }],
+      },
+      { app: { timezone: 'UTC', timeFormat: '24h' } },
+    )
+
+    const cell = wrapper.find('tbody td')
+    expect(cell.text()).toContain('15:04:05')
+    expect(cell.text()).not.toMatch(/\b[AP]M\b/i)
+  })
+
+  // Function-format columns (aggregateConfig's jobs "Triggered" derives its
+  // instant from the row, so it can't be a plain 'datetime' string format) must
+  // reach the same timezone/time-format opts the string formats already get,
+  // otherwise their timestamps silently ignore the top-bar selector.
+  it('passes the store timezone/time-format opts as the 3rd arg to a function format', () => {
+    const format = vi.fn(() => 'formatted')
+    mountTable(
+      {
+        columns: [{ key: 'last_finished', label: 'Finished', format }],
+        rows: [{ id: 1, last_finished: '2026-07-16T15:04:05Z' }],
+      },
+      { app: { timezone: 'UTC', timeFormat: '24h' } },
+    )
+
+    expect(format).toHaveBeenCalledWith(
+      '2026-07-16T15:04:05Z',
+      { id: 1, last_finished: '2026-07-16T15:04:05Z' },
+      { timezone: 'UTC', format: '24h' },
+    )
+  })
+
+  it('passes the current store opts to a function format when the store holds Local/12h', () => {
+    const format = vi.fn(() => 'formatted')
+    mountTable(
+      {
+        columns: [{ key: 'last_finished', label: 'Finished', format }],
+        rows: [{ id: 1, last_finished: '2026-07-16T15:04:05Z' }],
+      },
+      { app: { timezone: 'Local', timeFormat: '12h' } },
+    )
+
+    expect(format.mock.calls[0][2]).toEqual({ timezone: 'Local', format: '12h' })
   })
 })

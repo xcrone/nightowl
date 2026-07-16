@@ -86,6 +86,12 @@ function formatDetailValue(key, value) {
   return value
 }
 
+// Related-rows cells. Threads the top-bar toggles through so `datetime`
+// columns match the detail pane above them rather than browser-local time.
+function formatChildValue(value, format) {
+  return formatValue(value, format, { timezone: app.timezone, format: app.timeFormat })
+}
+
 // Whether a string value is itself JSON-encoded object/array — such columns
 // (e.g. a raw `route_methods` array) don't belong in a flat key/value table.
 function parsesToObject(value) {
@@ -370,8 +376,8 @@ watch([appId, resource, id, () => app.period], load, { immediate: true })
                   v-if="col.badge"
                   class="rounded px-1.5 py-0.5 text-xs font-medium"
                   :class="col.badge(row[col.key])"
-                >{{ formatValue(row[col.key], col.format) }}</span>
-                <span v-else>{{ formatValue(row[col.key], col.format) }}</span>
+                >{{ formatChildValue(row[col.key], col.format) }}</span>
+                <span v-else>{{ formatChildValue(row[col.key], col.format) }}</span>
               </td>
             </tr>
           </tbody>
