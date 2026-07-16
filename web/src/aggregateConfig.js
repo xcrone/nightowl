@@ -28,11 +28,11 @@
 //   { kind: 'stat', title, stats: [{ label, value, class? }], caption? }
 
 import {
+  absoluteTime,
   base64UrlEncode,
   formatDuration,
   formatDurationColor,
   formatPercent,
-  relativeTime,
 } from './utils/format'
 import { BADGE, methodColor } from './resourceConfig'
 
@@ -135,7 +135,7 @@ export const aggregateConfig = {
       ...statusCols(),
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => [statusBarPanel(p.requests), durationPanel(p.duration)],
   },
@@ -154,7 +154,7 @@ export const aggregateConfig = {
       ...statusCols(),
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => [statusBarPanel(p.requests), durationPanel(p.duration)],
   },
@@ -176,8 +176,8 @@ export const aggregateConfig = {
       { key: 'failed', label: 'Failed', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Triggered', format: (v, row) => relativeTime(triggeredAt(row)), align: 'right' },
-      { key: 'last_finished', label: 'Finished', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Triggered', format: (v, row, opts) => absoluteTime(triggeredAt(row), opts), align: 'right' },
+      { key: 'last_finished', label: 'Finished', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const a = p.attempts ?? p.jobs ?? {}
@@ -219,7 +219,7 @@ export const aggregateConfig = {
       { key: 'failed', label: 'Failed', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const c = p.calls ?? p.commands ?? {}
@@ -270,7 +270,7 @@ export const aggregateConfig = {
       { key: 'skipped', label: 'Skipped', align: 'right' },
       { key: 'total', label: 'Total', align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const t = p.tasks ?? p.scheduled_tasks ?? {}
@@ -314,7 +314,7 @@ export const aggregateConfig = {
       { key: 'calls', label: 'Calls', align: 'right' },
       { key: 'total', label: 'Total', format: formatDuration, cellClass: durColor, align: 'right' },
       ...durationCols(),
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const c = p.calls ?? p.queries ?? {}
@@ -346,7 +346,7 @@ export const aggregateConfig = {
       { key: 'channels', label: 'Channels', badge: channelsBadge, format: channelsLabel, sortable: false },
       { key: 'count', label: 'Count', align: 'right' },
       ...durationCols(),
-      { key: 'last_sent', label: 'Last Sent', format: relativeTime, align: 'right' },
+      { key: 'last_sent', label: 'Last Sent', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const v = p.volume ?? p.notifications ?? {}
@@ -378,7 +378,7 @@ export const aggregateConfig = {
       { key: 'mailable', label: 'Mailable' },
       { key: 'count', label: 'Count', align: 'right' },
       ...durationCols(),
-      { key: 'last_sent', label: 'Last Sent', format: relativeTime, align: 'right' },
+      { key: 'last_sent', label: 'Last Sent', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const v = p.volume ?? p.mail ?? {}
@@ -414,7 +414,7 @@ export const aggregateConfig = {
       { key: 'deletes', label: 'Deletes', align: 'right' },
       { key: 'failures', label: 'Failures', align: 'right', badge: redWhenPositive },
       { key: 'total', label: 'Total', align: 'right' },
-      { key: 'last_triggered', label: 'Last Triggered', format: relativeTime, align: 'right' },
+      { key: 'last_triggered', label: 'Last Triggered', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const e = p.events ?? {}
@@ -466,7 +466,7 @@ export const aggregateConfig = {
       { key: 'requests', label: 'Requests', align: 'right' },
       { key: 'queued_jobs', label: 'Queued Jobs', align: 'right' },
       { key: 'exceptions', label: 'Exceptions', align: 'right', badge: redWhenPositive },
-      { key: 'last_seen', label: 'Last Seen', format: relativeTime, align: 'right' },
+      { key: 'last_seen', label: 'Last Seen', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const u = p.users ?? p.authenticated ?? {}
@@ -519,7 +519,7 @@ export const aggregateConfig = {
       { key: 'source', label: 'Source', sortable: false },
       { key: 'count', label: 'Count', align: 'right' },
       { key: 'users', label: 'Users', align: 'right' },
-      { key: 'last_seen', label: 'Last Seen', format: relativeTime, align: 'right' },
+      { key: 'last_seen', label: 'Last Seen', format: 'datetime', align: 'right' },
     ],
     panels: (p) => {
       const o = p.occurrences ?? p.exceptions ?? {}

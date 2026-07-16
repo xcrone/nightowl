@@ -4,7 +4,7 @@ import { useRoute, RouterLink } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import { useAuthStore } from '../../store/auth'
 import api from '../../services/api'
-import { relativeTime } from '../../utils/format'
+import { absoluteTime } from '../../utils/format'
 import { BADGE } from '../../resourceConfig'
 import StatPanel from '../../components/StatPanel.vue'
 
@@ -17,6 +17,8 @@ const auth = useAuthStore()
 
 const appId = computed(() => route.params.appId)
 const issueId = computed(() => route.params.id)
+
+const when = (iso) => absoluteTime(iso, { timezone: app.timezone, format: app.timeFormat })
 
 const state = reactive({
   loading: false,
@@ -90,7 +92,7 @@ function markdown() {
     `- **Origin:** ${origin.value || '—'}`,
     `- **Laravel:** ${i.laravel_version ?? '—'} · **PHP:** ${i.php_version ?? '—'}`,
     `- **Occurrences:** ${i.occurrences_count ?? 0} · **Users:** ${i.users_count ?? 0}`,
-    `- **First seen:** ${relativeTime(i.first_seen_at)} · **Last seen:** ${relativeTime(i.last_seen_at)}`,
+    `- **First seen:** ${when(i.first_seen_at)} · **Last seen:** ${when(i.last_seen_at)}`,
     '',
     '## Stack trace',
     frames || '_No frames_',
@@ -287,7 +289,7 @@ watch(issueId, load, { immediate: true })
                   <td colspan="4" class="px-2 py-3 text-center text-gray-400 dark:text-gray-500">No occurrences.</td>
                 </tr>
                 <tr v-for="occ in state.occurrences" :key="occ.id">
-                  <td class="whitespace-nowrap px-2 py-1.5 text-gray-500 dark:text-gray-400">{{ relativeTime(occ.created_at) }}</td>
+                  <td class="whitespace-nowrap px-2 py-1.5 text-gray-500 dark:text-gray-400">{{ when(occ.created_at) }}</td>
                   <td class="px-2 py-1.5">
                     <span class="rounded px-2 py-0.5 text-xs font-medium" :class="BADGE.gray">{{ occ.source_label ?? occ.source ?? '—' }}</span>
                   </td>
@@ -315,12 +317,12 @@ watch(issueId, load, { immediate: true })
                 {{ a.action }}
                 <span v-if="a.new_value" class="text-gray-500 dark:text-gray-400">→ {{ a.new_value }}</span>
               </span>
-              <span class="text-xs text-gray-400 dark:text-gray-500">· {{ relativeTime(a.created_at) }}</span>
+              <span class="text-xs text-gray-400 dark:text-gray-500">· {{ when(a.created_at) }}</span>
             </li>
             <li v-for="c in state.comments" :key="`c-${c.id}`" class="rounded border border-gray-100 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-800/50">
               <div class="flex items-baseline justify-between">
                 <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ c.author_name ?? c.actor_name ?? 'You' }}</span>
-                <span class="text-xs text-gray-400 dark:text-gray-500">{{ relativeTime(c.created_at) }}</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ when(c.created_at) }}</span>
               </div>
               <p class="mt-1 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{{ c.body }}</p>
             </li>
@@ -372,11 +374,11 @@ watch(issueId, load, { immediate: true })
           <dl class="space-y-2 text-sm">
             <div class="flex justify-between">
               <dt class="text-gray-500 dark:text-gray-400">First seen</dt>
-              <dd class="text-gray-900 dark:text-gray-100">{{ relativeTime(state.issue.first_seen_at) }}</dd>
+              <dd class="text-gray-900 dark:text-gray-100">{{ when(state.issue.first_seen_at) }}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-gray-500 dark:text-gray-400">Last seen</dt>
-              <dd class="text-gray-900 dark:text-gray-100">{{ relativeTime(state.issue.last_seen_at) }}</dd>
+              <dd class="text-gray-900 dark:text-gray-100">{{ when(state.issue.last_seen_at) }}</dd>
             </div>
             <div class="flex justify-between">
               <dt class="text-gray-500 dark:text-gray-400">Occurrences</dt>

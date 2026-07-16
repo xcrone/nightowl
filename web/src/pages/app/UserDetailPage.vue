@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
-import { formatDuration, relativeTime } from '../../utils/format'
+import { formatDuration, absoluteTime } from '../../utils/format'
 import { methodColor } from '../../resourceConfig'
 import StatPanel from '../../components/StatPanel.vue'
 import BarChartPanel from '../../components/BarChartPanel.vue'
@@ -17,6 +17,8 @@ const app = useAppStore()
 
 const appId = computed(() => route.params.appId)
 const userId = computed(() => route.params.userId)
+
+const when = (iso) => absoluteTime(iso, { timezone: app.timezone, format: app.timeFormat })
 
 const state = reactive({
   loading: false,
@@ -81,7 +83,7 @@ watch([userId, () => app.period], load, { immediate: true })
         </h3>
         <span v-if="state.user.email && state.user.name" class="text-xs text-gray-500 dark:text-gray-400">{{ state.user.email }}</span>
         <span v-if="state.user.last_seen" class="text-xs text-gray-400 dark:text-gray-500">
-          Last seen {{ relativeTime(state.user.last_seen) }}
+          Last seen {{ when(state.user.last_seen) }}
         </span>
       </div>
       <div v-if="userOpen" class="overflow-x-auto rounded bg-gray-50 p-3 font-mono text-xs dark:bg-gray-800">

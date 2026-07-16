@@ -127,6 +127,78 @@ class IndexAggregateTest extends TestCase
         $this->assertContains('beta', $ids);
     }
 
+    /**
+     * The aggregate engine reads rows off the raw query builder (not Eloquent),
+     * so MAX(created_at) arrives as a naive `Y-m-d H:i:s` string from a
+     * `timestamp without time zone` column. Emitting that verbatim makes the SPA's
+     * `new Date(value)` parse it as LOCAL time — an 8h skew on a UTC+8 machine.
+     * Every other endpoint emits ISO 8601 with an explicit zone.
+     */
+    public function test_aggregate_last_triggered_is_iso8601_with_an_explicit_zone(): void
+    {
+        $user = User::factory()->create();
+        $at = Carbon::now('UTC')->subMinutes(5)->startOfSecond();
+
+        RequestRecord::factory()->create([
+            'app_id' => 'agg_app', 'route_path' => '/api/orders', 'created_at' => $at,
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/requests')->json('data'))
+            ->firstWhere('route_path', '/api/orders');
+
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\+\d{2}:\d{2}|-\d{2}:\d{2}|Z)$/',
+            $row['last_triggered'],
+        );
+        // ...and it must be the SAME instant that was stored — no offset shift.
+        $this->assertTrue(
+            $at->equalTo(Carbon::parse($row['last_triggered'])),
+            "Expected {$at->toIso8601String()}, got {$row['last_triggered']}",
+        );
+    }
+
+    public function test_users_aggregate_last_seen_is_iso8601_with_an_explicit_zone(): void
+    {
+        $user = User::factory()->create();
+        $at = Carbon::now('UTC')->subMinutes(5)->startOfSecond();
+
+        RequestRecord::factory()->create([
+            'app_id' => 'agg_app', 'user_id' => 'alpha', 'created_at' => $at,
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/users')->json('data'))
+            ->firstWhere('user_id', 'alpha');
+
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\+\d{2}:\d{2}|-\d{2}:\d{2}|Z)$/',
+            $row['last_seen'],
+        );
+        $this->assertTrue(
+            $at->equalTo(Carbon::parse($row['last_seen'])),
+            "Expected {$at->toIso8601String()}, got {$row['last_seen']}",
+        );
+    }
+
+    /** The other configured 'last_alias' values resolve from config, not a hardcoded list. */
+    public function test_exceptions_aggregate_last_seen_is_iso8601_with_an_explicit_zone(): void
+    {
+        $user = User::factory()->create();
+        $at = Carbon::now('UTC')->subMinutes(5)->startOfSecond();
+
+        ExceptionRecord::factory()->create([
+            'app_id' => 'agg_app', 'class' => 'RuntimeException', 'created_at' => $at,
+        ]);
+
+        $row = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/exceptions')->json('data'))
+            ->firstWhere('class', 'RuntimeException');
+
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\+\d{2}:\d{2}|-\d{2}:\d{2}|Z)$/',
+            $row['last_seen'],
+        );
+        $this->assertTrue($at->equalTo(Carbon::parse($row['last_seen'])));
+    }
+
     public function test_cache_aggregate_computes_hit_rate(): void
     {
         $user = User::factory()->create();

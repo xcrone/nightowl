@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import { useAuthStore } from '../../store/auth'
 import api from '../../services/api'
-import { relativeTime } from '../../utils/format'
+import { absoluteTime } from '../../utils/format'
 import { BADGE } from '../../resourceConfig'
 import { debounce } from '../../utils/debounce'
 
@@ -17,6 +17,8 @@ const app = useAppStore()
 const auth = useAuthStore()
 
 const appId = computed(() => route.params.appId)
+
+const when = (iso) => absoluteTime(iso, { timezone: app.timezone, format: app.timeFormat })
 
 const state = reactive({
   rows: [],
@@ -242,8 +244,8 @@ watch([() => app.period, () => app.environment], load, { immediate: true })
             </td>
             <td class="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{{ row.occurrences_count ?? 0 }}</td>
             <td class="px-3 py-2 text-right text-gray-900 dark:text-gray-100">{{ row.users_count ?? 0 }}</td>
-            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ relativeTime(row.first_seen_at) }}</td>
-            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ relativeTime(row.last_seen_at) }}</td>
+            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ when(row.first_seen_at) }}</td>
+            <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ when(row.last_seen_at) }}</td>
             <!-- Assigned is non-interactive (docs/pages/issues-list.md): clicking it must not navigate. -->
             <td class="px-3 py-2" @click.stop>
               <span

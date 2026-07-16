@@ -141,7 +141,9 @@ class IndexAggregate
                 'requests' => (int) $r->requests,
                 'queued_jobs' => (int) ($jobs[$r->user_id]->queued_jobs ?? 0),
                 'exceptions' => (int) ($exceptions[$r->user_id]->exceptions ?? 0),
-                'last_seen' => $r->last_seen,
+                // selectRaw alias, so it bypasses the model's date casts and
+                // arrives naive — this branch returns before normalizeRow().
+                'last_seen' => AggregateQuery::toIso8601($r->last_seen),
             ];
         })->values()
             ->when($q !== null, fn ($c) => $c->filter(fn ($u) => str_contains(strtolower($u['user_id'].' '.$u['email']), strtolower($q)))->values())

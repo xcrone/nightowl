@@ -158,9 +158,7 @@ describe('AggregateListPage', () => {
     expect(push).toHaveBeenCalledWith(`/dashboard/app1/exceptions/${base64UrlEncode('App\\LogicException')}`)
   })
 
-  it('renders a Last Triggered column with a relative-time cell for a non-jobs resource', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-07-06T12:00:00Z'))
+  it('renders a Last Triggered column with an absolute-time cell for a non-jobs resource', async () => {
     const impl = (url) => {
       if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
       return Promise.resolve({
@@ -182,17 +180,16 @@ describe('AggregateListPage', () => {
         },
       })
     }
-    const { wrapper } = await mountPage('requests', impl)
-    vi.useRealTimers()
+    // Pinned to UTC: the default 'Local' would make the assertion depend on
+    // the machine's ambient timezone.
+    const { wrapper } = await mountPage('requests', impl, { timezone: 'UTC' })
 
     const header = wrapper.findAll('th').find((th) => th.text().includes('Last Triggered'))
     expect(header).toBeTruthy()
-    expect(wrapper.text()).toContain('30m ago')
+    expect(wrapper.text()).toContain('11:30:00')
   })
 
   it('renders both a Triggered and a Finished column for jobs, with Triggered reading earlier than Finished', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-07-06T12:00:00Z'))
     const impl = (url) => {
       if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
       return Promise.resolve({
@@ -207,8 +204,7 @@ describe('AggregateListPage', () => {
               total: 1,
               avg: 100,
               p95: 200,
-              // Finished 1h ago; duration was 90 minutes, so it was triggered 2h30m ago
-              // (crosses the hour bucket boundary so the two relative strings differ).
+              // Finished 11:00Z; duration was 90 minutes, so Triggered derives to 09:30Z.
               last_finished: '2026-07-06T11:00:00Z',
               last_duration: 5_400_000_000, // 90 minutes, in microseconds
             },
@@ -220,16 +216,18 @@ describe('AggregateListPage', () => {
         },
       })
     }
-    const { wrapper } = await mountPage('jobs', impl)
-    vi.useRealTimers()
+    // Pinned to UTC: the default 'Local' would make the assertion depend on
+    // the machine's ambient timezone.
+    const { wrapper } = await mountPage('jobs', impl, { timezone: 'UTC' })
 
     const headers = wrapper.findAll('th').map((th) => th.text())
     expect(headers.some((h) => h.includes('Triggered'))).toBe(true)
     expect(headers.some((h) => h.includes('Finished'))).toBe(true)
 
-    // Triggered = last_finished - last_duration, so it renders as further in the past.
-    expect(wrapper.text()).toContain('2h ago')
-    expect(wrapper.text()).toContain('1h ago')
+    // Triggered = last_finished - last_duration (90min), so it derives to 09:30Z
+    // against the 11:00Z finish — still proving the derivation, now absolutely.
+    expect(wrapper.text()).toContain('09:30:00')
+    expect(wrapper.text()).toContain('11:00:00')
   })
 
   it('client-side filters exceptions by handled/unhandled', async () => {

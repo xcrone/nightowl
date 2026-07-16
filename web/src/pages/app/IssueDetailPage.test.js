@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
@@ -139,4 +139,102 @@ describe('IssueDetailPage', () => {
     expect(wrapper.findAll('button').find((b) => b.text() === 'Resolve')).toBeUndefined()
     expect(api.get).not.toHaveBeenCalledWith(expect.stringContaining('/comments'))
   })
+})
+
+// The detail page's timestamps were relative ("3h ago"), so they ignored the
+// top-bar timezone selector. They must render absolute and follow the store.
+describe('IssueDetailPage timestamps', () => {
+  const LAST_SEEN = '2026-07-16T15:04:05Z'
+  const FIRST_SEEN = '2026-07-14T09:30:00Z'
+  const OCCURRED = '2026-07-16T11:22:33Z'
+  // Pinned so the buggy relative rendering is a deterministic "4h ago" rather
+  // than "just now"/"Nh ago" depending on the real instant the suite runs at.
+  const NOW = '2026-07-16T20:00:00Z'
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(NOW))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const timedDetail = {
+    ...detail,
+    issue: { ...detail.issue, first_seen_at: FIRST_SEEN, last_seen_at: LAST_SEEN },
+    occurrences: [{ ...detail.occurrences[0], created_at: OCCURRED }],
+  }
+
+  async function mountTimed(appState) {
+    api.get.mockImplementation((url) =>
+      url.includes('/comments')
+        ? Promise.resolve({ data: { data: [] } })
+        : Promise.resolve({ data: timedDetail }),
+    )
+    api.post.mockResolvedValue({ data: {} })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/dashboard/:appId/issues/:id', component: { template: '<div />' } },
+        { path: '/dashboard/:appId/users/:userId', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/dashboard/app1/issues/5')
+    await router.isReady()
+    const wrapper = mount(IssueDetailPage, {
+      global: {
+        plugins: [router, createTestingPinia({
+          createSpy: vi.fn,
+          initialState: { app: { period: '1h', ...appState }, auth: { user: null, checked: true } },
+        })],
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  // Scoped to the Details <dd>s on purpose: the Activity feed's own relative
+  // timestamps are out of scope here, so a wrapper.text() /ago/ assertion would
+  // be over-broad and fail even once these cells are fixed.
+  const detailValue = (wrapper, label) => {
+    const row = wrapper.findAll('dl > div').find((d) => d.find('dt').text() === label)
+    return row.find('dd')
+  }
+
+  it('renders First seen / Last seen absolutely in the store timezone (UTC)', async () => {
+    const wrapper = await mountTimed({ timezone: 'UTC', timeFormat: '24h' })
+
+    expect(detailValue(wrapper, 'Last seen').text()).toContain('15:04:05')
+    expect(detailValue(wrapper, 'First seen').text()).toContain('09:30:00')
+    expect(detailValue(wrapper, 'Last seen').text()).not.toMatch(/ago/)
+    expect(detailValue(wrapper, 'First seen').text()).not.toMatch(/ago/)
+  })
+
+  it('renders the occurrence timestamp absolutely in the store timezone (UTC)', async () => {
+    const wrapper = await mountTimed({ timezone: 'UTC', timeFormat: '24h' })
+    const occurrenceCell = wrapper.findAll('table tbody td')[0]
+
+    expect(occurrenceCell.text()).toContain('11:22:33')
+    expect(occurrenceCell.text()).not.toMatch(/ago/)
+  })
+
+  it('honours the 12h time format from the store', async () => {
+    const wrapper = await mountTimed({ timezone: 'UTC', timeFormat: '12h' })
+    const lastSeen = detailValue(wrapper, 'Last seen')
+
+    expect(lastSeen.text()).toMatch(/0?3:04:05/)
+    expect(lastSeen.text()).toMatch(/\bPM\b/i)
+  })
+
+  // Ambient TZ isn't pinned (no TZ in vite.config.js), so this contrast is only
+  // meaningful off-UTC; guarded rather than flaky.
+  it.skipIf(new Date(LAST_SEEN).getTimezoneOffset() === 0)(
+    'shifts Last seen when the store timezone flips from UTC to Local',
+    async () => {
+      const utc = await mountTimed({ timezone: 'UTC', timeFormat: '24h' })
+      const local = await mountTimed({ timezone: 'Local', timeFormat: '24h' })
+
+      expect(detailValue(local, 'Last seen').text()).not.toContain('15:04:05')
+      expect(detailValue(local, 'Last seen').text()).not.toMatch(/ago/)
+      expect(detailValue(utc, 'Last seen').text()).toContain('15:04:05')
+    },
+  )
 })
