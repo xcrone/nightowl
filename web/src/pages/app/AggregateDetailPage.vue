@@ -3,6 +3,8 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
+import { useLivePoll } from '../../composables/useLivePoll'
+import { useRowHighlight } from '../../composables/useRowHighlight'
 import { aggregateConfig } from '../../aggregateConfig'
 import { absoluteTime, formatDuration, formatDurationColor } from '../../utils/format'
 import { BADGE, methodColor, statusCodeColor } from '../../resourceConfig'
@@ -169,10 +171,14 @@ const barPanel = computed(() => {
 const durationValue = computed(() => formatDuration(state.percentiles?.[percentile.value]))
 const durationClass = computed(() => formatDurationColor(state.percentiles?.[percentile.value]))
 
-async function load() {
+const { highlightKeys, track } = useRowHighlight('id')
+
+// `silent` skips the loading state so a live tick refreshes the occurrence
+// table in place rather than blinking it back to a skeleton — see useLivePoll.
+async function load({ silent = false } = {}) {
   if (!cfg.value || !appId.value || !key.value) return
   const seq = ++requestSeq
-  state.loading = true
+  if (!silent) state.loading = true
   const params = { period: app.period, page: state.page }
   if (app.environment) params.environment = app.environment
   if (bucket.value) params.bucket = bucket.value
@@ -192,6 +198,7 @@ async function load() {
     state.page = occ.current_page ?? 1
     state.lastPage = occ.last_page ?? 1
     state.total = occ.total ?? state.occurrences.length
+    track(state.occurrences, { highlight: silent })
   } catch {
     if (seq !== requestSeq) return
     state.label = ''
@@ -267,6 +274,11 @@ watch(
   },
   { immediate: true },
 )
+
+// Occurrences paginate newest-first, so polling anything but page 1 would pull
+// rows out from under the reader as fresh records push the list down. Past the
+// first page the tick is a no-op until they navigate back.
+useLivePoll(() => (state.page === 1 ? load({ silent: true }) : Promise.resolve()))
 </script>
 
 <template>
@@ -431,7 +443,8 @@ watch(
               v-for="(row, i) in state.occurrences"
               v-else
               :key="row.id ?? i"
-              class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+              class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+              :class="highlightKeys.includes(row.id) ? 'bg-primary-50 dark:bg-primary-600/20' : ''"
               @click="recordLink(row) && router.push(recordLink(row))"
             >
               <td

@@ -6,6 +6,7 @@ import { useAppStore } from '../store/app'
 import { useThemeStore } from '../store/theme'
 import { navGroups } from '../nav.js'
 import PeriodSelector from '../components/PeriodSelector.vue'
+import LiveToggle from '../components/LiveToggle.vue'
 import { BADGE } from '../resourceConfig'
 
 const route = useRoute()
@@ -347,6 +348,8 @@ function goToOrganization() {
         <h1 class="text-base font-semibold">{{ pageTitle }}</h1>
 
         <div class="ml-auto flex items-center gap-2">
+          <LiveToggle v-if="route.meta.live" />
+
           <PeriodSelector />
 
           <select

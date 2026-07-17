@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
@@ -12,8 +12,9 @@ const rows = [
   { id: 2, created_at: '2026-07-06T09:30:00Z', source: 'queue', level: 'info', message: 'Job processed' },
 ]
 
-async function mountPage() {
-  api.get.mockResolvedValue({ data: { data: rows, last_page: 1 } })
+async function mountPage(appState = {}, impl) {
+  if (impl) api.get.mockImplementation(impl)
+  else api.get.mockResolvedValue({ data: { data: rows, last_page: 1 } })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/dashboard/:appId', component: { template: '<div />' } }],
@@ -24,7 +25,10 @@ async function mountPage() {
     global: {
       plugins: [
         router,
-        createTestingPinia({ createSpy: vi.fn, initialState: { app: { period: '7d', timezone: 'UTC', timeFormat: '24h' } } }),
+        createTestingPinia({
+          createSpy: vi.fn,
+          initialState: { app: { period: '7d', timezone: 'UTC', timeFormat: '24h', ...appState } },
+        }),
       ],
     },
   })
@@ -56,5 +60,53 @@ describe('LogsPage', () => {
 
     const last = api.get.mock.calls.at(-1)
     expect(last[1].params.level).toBe('error')
+  })
+})
+
+describe('LogsPage — live mode', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('re-fetches logs on the live interval', async () => {
+    await mountPage({ live: true, liveInterval: 3000 })
+    expect(api.get.mock.calls.length).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.get.mock.calls.length).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.get.mock.calls.length).toBe(3)
+  })
+
+  it('renders rows that arrive on a live tick', async () => {
+    const fresh = { id: 3, created_at: '2026-07-06T09:35:00Z', source: 'cache', level: 'info', message: 'Cache warmed' }
+    let hits = 0
+    const impl = () => {
+      hits += 1
+      if (hits === 1) return Promise.resolve({ data: { data: rows, last_page: 1 } })
+      return Promise.resolve({ data: { data: [fresh, ...rows], last_page: 1 } })
+    }
+    const wrapper = await mountPage({ live: true, liveInterval: 3000 }, impl)
+    expect(wrapper.text()).not.toContain('Cache warmed')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Cache warmed')
+    expect(wrapper.text()).toContain('3 Logs')
+  })
+
+  it('preserves the level filter on a live tick', async () => {
+    const wrapper = await mountPage({ live: true, liveInterval: 3000 })
+    await wrapper.find('select').setValue('error')
+    await flushPromises()
+
+    const before = api.get.mock.calls.length
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(api.get.mock.calls.length).toBe(before + 1)
+    const last = api.get.mock.calls.at(-1)
+    expect(last[1].params.level).toBe('error')
+    expect(last[1].params.period).toBe('7d')
   })
 })

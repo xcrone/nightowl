@@ -30,6 +30,9 @@ const props = defineProps({
   searchPlaceholder: { type: String, default: 'Search…' },
   rowKey: { type: String, default: 'id' },
   emptyText: { type: String, default: 'No records.' },
+  // Row keys to flash as new/changed on a live tick — see useRowHighlight.
+  // Empty (the default) highlights nothing, so non-live pages are unaffected.
+  highlightKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['search', 'sort', 'row-click'])
@@ -129,7 +132,8 @@ function cellClasses(col, row) {
             v-for="(row, i) in rows"
             v-else
             :key="row[rowKey] ?? i"
-            class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+            class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+            :class="highlightKeys.includes(row[rowKey]) ? 'bg-primary-50 dark:bg-primary-600/20' : ''"
             @click="emit('row-click', row)"
           >
             <td

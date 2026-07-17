@@ -4,6 +4,8 @@ import api from '../services/api'
 const PERIOD_KEY = 'nightowl-period'
 const TIMEZONE_KEY = 'nightowl-timezone'
 const TIME_FORMAT_KEY = 'nightowl-time-format'
+const LIVE_KEY = 'nightowl-live'
+const LIVE_INTERVAL_KEY = 'nightowl-live-interval'
 
 // The per-app store: holds the currently-selected app plus the top-bar
 // window controls (period/timezone/format) that every feature page reads.
@@ -19,6 +21,11 @@ export const useAppStore = defineStore('app', {
     // App-switcher "All environments" filter. `null` = all; not persisted —
     // it's app-scoped and reset when the current app changes.
     environment: null,
+    // Telescope-style live polling, opt-in and persisted like the window
+    // controls above. Off by default: a forgotten open tab would otherwise
+    // re-run the aggregates' GROUP BY + percentile_cont queries forever.
+    live: localStorage.getItem(LIVE_KEY) === '1',
+    liveInterval: Number(localStorage.getItem(LIVE_INTERVAL_KEY)) || 3000,
   }),
 
   getters: {
@@ -65,6 +72,16 @@ export const useAppStore = defineStore('app', {
     // pass it as `?environment=` on their fetches.
     setEnvironment(environment) {
       this.environment = environment
+    },
+
+    setLive(live) {
+      this.live = live
+      localStorage.setItem(LIVE_KEY, live ? '1' : '0')
+    },
+
+    setLiveInterval(liveInterval) {
+      this.liveInterval = liveInterval
+      localStorage.setItem(LIVE_INTERVAL_KEY, String(liveInterval))
     },
 
     // Targeted update after an app edit (e.g. SettingsPage's "Edit app"

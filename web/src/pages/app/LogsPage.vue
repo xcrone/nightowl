@@ -3,6 +3,8 @@ import { reactive, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
+import { useLivePoll } from '../../composables/useLivePoll'
+import { useRowHighlight } from '../../composables/useRowHighlight'
 import { absoluteTime } from '../../utils/format'
 import { levelColor, BADGE } from '../../resourceConfig'
 import { debounce } from '../../utils/debounce'
@@ -25,8 +27,12 @@ const state = reactive({
 
 const appId = computed(() => route.params.appId)
 
-async function load() {
-  state.loading = true
+const { highlightKeys, track } = useRowHighlight('id')
+
+// `silent` skips the loading state so a live tick streams new logs in without
+// blinking the table back to a skeleton — see useLivePoll.
+async function load({ silent = false } = {}) {
+  if (!silent) state.loading = true
   const params = { period: app.period }
   if (state.level) params.level = state.level
   if (state.search) params.q = state.search
@@ -34,6 +40,7 @@ async function load() {
     const { data } = await api.get(`/api/apps/${appId.value}/logs`, { params })
     state.rows = data.data ?? []
     state.lastPage = data.last_page ?? 1
+    track(state.rows, { highlight: silent })
   } catch {
     state.rows = []
   } finally {
@@ -41,7 +48,7 @@ async function load() {
   }
 }
 
-const emitSearch = debounce(load, 300)
+const emitSearch = debounce(() => load(), 300)
 function onSearchInput(value) {
   state.search = value
   emitSearch()
@@ -55,7 +62,9 @@ function when(iso) {
   return absoluteTime(iso, { timezone: app.timezone, format: app.timeFormat })
 }
 
-watch(() => app.period, load, { immediate: true })
+watch(() => app.period, () => load(), { immediate: true })
+
+useLivePoll(() => load({ silent: true }))
 </script>
 
 <template>
@@ -100,7 +109,13 @@ watch(() => app.period, load, { immediate: true })
               No logs found — try adjusting any filters or time range.
             </td>
           </tr>
-          <tr v-for="(row, i) in state.rows" v-else :key="row.id ?? i" class="hover:bg-gray-50 dark:hover:bg-gray-800">
+          <tr
+            v-for="(row, i) in state.rows"
+            v-else
+            :key="row.id ?? i"
+            class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+            :class="highlightKeys.includes(row.id) ? 'bg-primary-50 dark:bg-primary-600/20' : ''"
+          >
             <td class="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">{{ when(row.created_at) }}</td>
             <td class="px-3 py-2">
               <span v-if="row.source" class="rounded px-2 py-0.5 text-xs font-medium" :class="BADGE.gray">{{ row.source }}</span>

@@ -3,6 +3,8 @@ import { reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../../store/app'
 import api from '../../services/api'
+import { useLivePoll } from '../../composables/useLivePoll'
+import { useRowHighlight } from '../../composables/useRowHighlight'
 import AggregateTable from '../../components/AggregateTable.vue'
 import BarChartPanel from '../../components/BarChartPanel.vue'
 import StatPanel from '../../components/StatPanel.vue'
@@ -35,9 +37,13 @@ const state = reactive({
 
 const appId = computed(() => route.params.appId)
 
-async function load() {
+const { highlightKeys, track } = useRowHighlight(cfg?.rowKey ?? 'id')
+
+// `silent` skips the loading state so a live tick refreshes the rows in place
+// rather than blinking the table back to a skeleton every few seconds.
+async function load({ silent = false } = {}) {
   if (!cfg) return
-  state.loading = true
+  if (!silent) state.loading = true
   const params = { period: app.period }
   if (app.environment) params.environment = app.environment
   if (state.sort) params.sort = state.sort
@@ -47,6 +53,7 @@ async function load() {
     const { data } = await api.get(`/api/apps/${appId.value}/aggregate/${cfg.resource}`, { params })
     state.rows = data.data ?? []
     state.panels = data.panels ?? {}
+    track(state.rows, { highlight: silent })
   } catch {
     state.rows = []
     state.panels = {}
@@ -112,7 +119,9 @@ function onRowClick(row) {
   if (to) router.push(to)
 }
 
-watch([() => app.period, () => app.environment], load, { immediate: true })
+watch([() => app.period, () => app.environment], () => load(), { immediate: true })
+
+useLivePoll(() => load({ silent: true }))
 </script>
 
 <template>
@@ -129,6 +138,7 @@ watch([() => app.period, () => app.environment], load, { immediate: true })
     :searchable="cfg.searchable"
     :search-placeholder="cfg.searchPlaceholder"
     :row-key="cfg.rowKey"
+    :highlight-keys="highlightKeys"
     empty-text="No records found. Try adjusting any filters or time range."
     @sort="onSort"
     @search="onSearch"
