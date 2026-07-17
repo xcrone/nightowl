@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
@@ -9,6 +9,7 @@ vi.mock('vue-chartjs', () => ({ Bar: { template: '<div class="chart" />' }, Line
 
 import api from '../../services/api'
 import { base64UrlEncode } from '../../utils/format'
+import AggregateTable from '../../components/AggregateTable.vue'
 import AggregateListPage from './AggregateListPage.vue'
 
 const rows = [
@@ -251,5 +252,112 @@ describe('AggregateListPage', () => {
     await handledBtn.trigger('click')
     expect(wrapper.text()).toContain('ValidationException')
     expect(wrapper.text()).not.toContain('ConnectException')
+  })
+})
+
+describe('AggregateListPage — live mode', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('does not poll while live is off', async () => {
+    await mountPage('requests', respond, { live: false, liveInterval: 3000 })
+    expect(reqCalls().length).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(reqCalls().length).toBe(1)
+  })
+
+  it('re-fetches on the live interval while live is on', async () => {
+    await mountPage('requests', respond, { live: true, liveInterval: 3000 })
+    expect(reqCalls().length).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reqCalls().length).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reqCalls().length).toBe(3)
+  })
+
+  // The whole point of a silent refresh: the table must not blink back to a
+  // loading skeleton every few seconds while the user is reading it.
+  it('keeps rows rendered and shows no loading skeleton during a live refresh', async () => {
+    let resolveTick
+    let hits = 0
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      hits += 1
+      if (hits === 1) return Promise.resolve({ data: { data: rows, panels } })
+      return new Promise((resolve) => { resolveTick = () => resolve({ data: { data: rows, panels } }) })
+    }
+    const { wrapper } = await mountPage('requests', impl, { live: true, liveInterval: 3000 })
+    expect(wrapper.text()).toContain('/orders')
+
+    // Tick fired; its response is still in flight.
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.text()).not.toContain('Loading…')
+    expect(wrapper.text()).toContain('/orders')
+
+    resolveTick()
+    await flushPromises()
+    expect(wrapper.text()).toContain('/orders')
+  })
+
+  it('preserves the current sort, search and scope params on a live tick', async () => {
+    const { wrapper } = await mountPage('requests', respond, { live: true, liveInterval: 3000 })
+
+    const p95Header = wrapper.findAll('th').find((th) => th.text().includes('P95'))
+    await p95Header.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('select').setValue('u1')
+    await flushPromises()
+
+    await wrapper.find('input[type="text"]').setValue('orders')
+    await vi.advanceTimersByTimeAsync(300) // search debounce
+    await flushPromises()
+
+    const before = reqCalls().length
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(reqCalls().length).toBe(before + 1)
+    const last = reqCalls().at(-1)
+    expect(last[1].params.sort).toBe('-p95')
+    expect(last[1].params.q).toBe('orders')
+    expect(last[1].params.user_id).toBe('u1')
+    expect(last[1].params.period).toBe('1h')
+  })
+
+  it('stops polling once the page unmounts', async () => {
+    const { wrapper } = await mountPage('requests', respond, { live: true, liveInterval: 3000 })
+    await vi.advanceTimersByTimeAsync(3000)
+    const settled = reqCalls().length
+
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(reqCalls().length).toBe(settled)
+  })
+
+  it('passes new/changed row keys to AggregateTable as highlightKeys', async () => {
+    const fresh = { method: 'GET', route_path: '/refunds', c2xx: 1, c4xx: 0, c5xx: 0, total: 1, avg: 900, p95: 900 }
+    let hits = 0
+    const impl = (url) => {
+      if (url.includes('/aggregate/users')) return Promise.resolve({ data: { data: [] } })
+      hits += 1
+      if (hits === 1) return Promise.resolve({ data: { data: rows, panels } })
+      return Promise.resolve({ data: { data: [fresh, ...rows], panels } })
+    }
+    const { wrapper } = await mountPage('requests', impl, { live: true, liveInterval: 3000 })
+
+    const table = wrapper.findComponent(AggregateTable)
+    // Cold mount: a first paint must not flash every row.
+    expect(table.props('highlightKeys')).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    // requests rowKey is route_path.
+    expect(table.props('highlightKeys')).toEqual(['/refunds'])
   })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createTestingPinia } from '@pinia/testing'
@@ -36,7 +36,7 @@ const payload = {
   },
 }
 
-async function mountPage(resource = 'requests', key = KEY, impl) {
+async function mountPage(resource = 'requests', key = KEY, impl, appState = {}) {
   api.get.mockImplementation(impl ?? (() => Promise.resolve({ data: payload })))
   const router = createRouter({
     history: createMemoryHistory(),
@@ -50,7 +50,10 @@ async function mountPage(resource = 'requests', key = KEY, impl) {
     global: {
       plugins: [
         router,
-        createTestingPinia({ createSpy: vi.fn, initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h' } } }),
+        createTestingPinia({
+          createSpy: vi.fn,
+          initialState: { app: { period: '1h', timezone: 'UTC', timeFormat: '24h', ...appState } },
+        }),
       ],
     },
   })
@@ -196,5 +199,45 @@ describe('AggregateDetailPage', () => {
 
     expect(wrapper.text()).toContain('/api/fresh')
     expect(wrapper.text()).not.toContain('/api/stale')
+  })
+})
+
+describe('AggregateDetailPage — live mode', () => {
+  // Echo the requested page back, so paging state survives a response the way
+  // the real api's paginator does.
+  const paged = (url, config) =>
+    Promise.resolve({
+      data: { ...payload, occurrences: { ...payload.occurrences, current_page: config?.params?.page ?? 1 } },
+    })
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('re-fetches the occurrence table on the live interval while on page 1', async () => {
+    await mountPage('requests', KEY, paged, { live: true, liveInterval: 3000 })
+    expect(api.get.mock.calls.length).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(api.get.mock.calls.length).toBe(2)
+    const last = api.get.mock.calls.at(-1)
+    expect(last[1].params.page).toBe(1)
+    expect(last[1].params.period).toBe('1h')
+  })
+
+  // Occurrences are paginated newest-first: polling page 2+ would shift rows
+  // out from under the user as new records land on page 1.
+  it('does not poll once the user pages past page 1', async () => {
+    const { wrapper } = await mountPage('requests', KEY, paged, { live: true, liveInterval: 3000 })
+
+    const next = wrapper.findAll('button').find((b) => b.text() === 'Next')
+    await next.trigger('click')
+    await flushPromises()
+    expect(api.get.mock.calls.at(-1)[1].params.page).toBe(2)
+
+    const settled = api.get.mock.calls.length
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(api.get.mock.calls.length).toBe(settled)
   })
 })

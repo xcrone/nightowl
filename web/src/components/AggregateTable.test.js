@@ -137,4 +137,30 @@ describe('AggregateTable', () => {
 
     expect(format.mock.calls[0][2]).toEqual({ timezone: 'Local', format: '12h' })
   })
+
+  // Live mode flashes rows that just arrived/changed. The exact Tailwind colour
+  // is the implementation's call, so assert the shape: the highlighted row
+  // carries a background utility its sibling doesn't, and the sibling renders
+  // exactly as it would with nothing highlighted at all.
+  it('gives a row whose key is in highlightKeys a highlight background class', () => {
+    const wrapper = mountTable({ highlightKeys: [1] })
+    const [highlighted, sibling] = wrapper.findAll('tbody tr')
+
+    const extra = highlighted.classes().filter((c) => !sibling.classes().includes(c))
+    expect(extra.some((c) => /(^|:)bg-/.test(c))).toBe(true)
+
+    const unhighlighted = mountTable({ highlightKeys: [] }).findAll('tbody tr')[1]
+    expect(sibling.classes()).toEqual(unhighlighted.classes())
+  })
+
+  // The existing pages render this table without the prop, so an omitted
+  // highlightKeys must be inert rather than undefined-y.
+  it('defaults highlightKeys to an empty array and highlights nothing when omitted', () => {
+    const wrapper = mountTable()
+
+    expect(wrapper.props('highlightKeys')).toEqual([])
+
+    const [first, second] = wrapper.findAll('tbody tr').map((tr) => tr.classes())
+    expect(first).toEqual(second)
+  })
 })
