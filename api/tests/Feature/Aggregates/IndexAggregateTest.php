@@ -48,9 +48,13 @@ class IndexAggregateTest extends TestCase
     {
         $user = User::factory()->create();
 
-        RequestRecord::factory()->count(3)->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'status_code' => 200]);
-        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'status_code' => 500]);
-        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/login', 'status_code' => 200]);
+        // /api/orders is the busier route (4 requests) but the *older* one;
+        // /api/login is a single, more recent request. Explicit timestamps keep
+        // the ordering assertion below deterministic rather than leaning on the
+        // factory's now() microseconds.
+        RequestRecord::factory()->count(3)->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'status_code' => 200, 'created_at' => now()->subMinutes(5)]);
+        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/orders', 'status_code' => 500, 'created_at' => now()->subMinutes(5)]);
+        RequestRecord::factory()->create(['app_id' => 'agg_app', 'route_path' => '/api/login', 'status_code' => 200, 'created_at' => now()->subMinute()]);
 
         $response = $this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/requests');
 
@@ -62,8 +66,9 @@ class IndexAggregateTest extends TestCase
         $this->assertSame(3, $orders['c2xx']);
         $this->assertSame(1, $orders['c5xx']);
         $this->assertArrayHasKey('p95', $orders);
-        // default sort is -total, so the busier route comes first.
-        $this->assertSame('/api/orders', $rows->first()['route_path']);
+        // default sort is -last_triggered, so the most recently hit route comes
+        // first — not the busiest one (which -total would have put on top).
+        $this->assertSame('/api/login', $rows->first()['route_path']);
     }
 
     public function test_aggregate_is_scoped_to_the_app(): void
@@ -465,18 +470,23 @@ class IndexAggregateTest extends TestCase
 
     /**
      * FINDING #8: the bespoke users aggregate honors ?sort= against its
-     * sortable whitelist rather than always sorting by -requests.
+     * sortable whitelist rather than always sorting by its default_sort.
      */
     public function test_users_aggregate_honors_sort(): void
     {
         $user = User::factory()->create();
 
         // alpha: 1 request, 2 queued jobs; beta: 2 requests, 0 jobs.
-        RequestRecord::factory()->create(['app_id' => 'agg_app', 'user_id' => 'alpha']);
-        RequestRecord::factory()->count(2)->create(['app_id' => 'agg_app', 'user_id' => 'beta']);
+        // alpha's request is the older one, so beta has the more recent
+        // last_seen. The timestamps are explicit and a whole minute apart
+        // because this bespoke path sorts in PHP over the *ISO8601 string*,
+        // which is second-precision — same-second users would tie and fall
+        // back to insertion order.
+        RequestRecord::factory()->create(['app_id' => 'agg_app', 'user_id' => 'alpha', 'created_at' => now()->subMinutes(5)]);
+        RequestRecord::factory()->count(2)->create(['app_id' => 'agg_app', 'user_id' => 'beta', 'created_at' => now()->subMinutes(2)]);
         JobRecord::factory()->count(2)->create(['app_id' => 'agg_app', 'user_id' => 'alpha']);
 
-        // Default (-requests): beta first.
+        // Default (-last_seen): beta, the more recently seen user, first.
         $default = collect($this->actingAs($user)->getJson('/api/apps/agg_app/aggregate/users')->json('data'))
             ->pluck('user_id')->all();
         $this->assertSame(['beta', 'alpha'], $default);
