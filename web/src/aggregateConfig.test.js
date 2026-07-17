@@ -41,6 +41,59 @@ describe('aggregateConfig time columns', () => {
   )
 })
 
+// Every aggregate list page used to open sorted by its volume column
+// ('-total'/'-count'/'-requests'), so the most recent activity could sit
+// anywhere — often pages deep. Each resource now opens on its own
+// latest-timestamp column, descending: newest first.
+//
+// jobs is the exception: it sorts by '-last_finished', not '-last_triggered'.
+// Its "Triggered" column is derived client-side (finish time minus duration,
+// see the suite below), so there is no such column for the api to ORDER BY.
+const DEFAULT_SORTS = {
+  requests: '-last_triggered',
+  'outgoing-requests': '-last_triggered',
+  jobs: '-last_finished',
+  commands: '-last_triggered',
+  'scheduled-tasks': '-last_triggered',
+  queries: '-last_triggered',
+  cache: '-last_triggered',
+  mail: '-last_sent',
+  notifications: '-last_sent',
+  exceptions: '-last_seen',
+  users: '-last_seen',
+}
+
+const resources = () => Object.keys(aggregateConfig).map((resource) => ({ resource }))
+
+describe('aggregateConfig default sorts', () => {
+  it('expects a default sort for every aggregate resource, and no others', () => {
+    // Guards the sweep below: a resource added to the config without an entry
+    // here (or a renamed key) would otherwise silently go unswept.
+    expect(Object.keys(DEFAULT_SORTS).sort()).toEqual(Object.keys(aggregateConfig).sort())
+    expect(Object.keys(aggregateConfig)).toHaveLength(11)
+  })
+
+  it.each(Object.entries(DEFAULT_SORTS).map(([resource, sort]) => ({ resource, sort })))(
+    '$resource opens sorted by $sort (newest activity first)',
+    ({ resource, sort }) => {
+      expect(aggregateConfig[resource].defaultSort).toBe(sort)
+    },
+  )
+
+  it.each(resources())(
+    "$resource's defaultSort names a column that actually exists",
+    ({ resource }) => {
+      // Strip the descending '-' prefix: '-last_seen' sorts on the `last_seen`
+      // column. A column rename that misses defaultSort would leave the page
+      // asking the api to sort by a field it no longer sends.
+      const cfg = aggregateConfig[resource]
+      const field = cfg.defaultSort.replace(/^-/, '')
+
+      expect(cfg.columns.map((col) => col.key)).toContain(field)
+    },
+  )
+})
+
 describe('aggregateConfig jobs "Triggered" column', () => {
   const column = aggregateConfig.jobs.columns.find((c) => c.key === 'last_triggered')
 

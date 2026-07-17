@@ -51,7 +51,8 @@ use App\Models\Telemetry\ScheduledTask;
 |                   into SUM(CASE WHEN … THEN 1 ELSE 0 END).
 |   'last'         column to emit MAX() of as `last_<name>` (e.g. last_sent).
 |   'sortable'     whitelisted sort keys (metric aliases or group columns).
-|   'default_sort' default order (e.g. '-total').
+|   'default_sort' default order — newest-first on the 'last' column
+|                  (e.g. '-last_triggered').
 |   'search'       columns matched by ?q= (ILIKE).
 |   'scope'        page-scope filters that apply (user_id/connection/level).
 |   'detail'       true → this aggregate key is clickable and drills into
@@ -75,7 +76,7 @@ return [
             'c5xx' => [['status_code', '>=', 500]],
         ],
         'sortable' => ['total', 'avg', 'p95', 'c5xx', 'route_path', 'last_triggered'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_triggered',
         'search' => ['route_path', 'route_name', 'url'], 'scope' => ['user_id'],
         'panels' => [
             'requests' => ['total', 'c2xx', 'c4xx', 'c5xx'],
@@ -93,7 +94,7 @@ return [
             'c5xx' => [['status_code', '>=', 500]],
         ],
         'sortable' => ['total', 'avg', 'p95', 'c5xx', 'host', 'last_triggered'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_triggered',
         'search' => ['host', 'url'], 'scope' => ['user_id'],
         'panels' => [
             'requests' => ['total', 'c2xx', 'c4xx', 'c5xx'],
@@ -119,7 +120,7 @@ return [
             'failed' => [['status', '=', 'failed']],
         ],
         'sortable' => ['total', 'avg', 'p95', 'failed', 'job_class', 'last_finished'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_finished',
         'search' => ['job_class', 'queue'], 'scope' => ['user_id'],
         'panels' => [
             'attempts' => ['total', 'queued', 'processed', 'released', 'failed'],
@@ -136,7 +137,7 @@ return [
             'failed' => [['exit_code', '!=', 0]],
         ],
         'sortable' => ['total', 'avg', 'p95', 'failed', 'command', 'last_triggered'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_triggered',
         'search' => ['command'], 'scope' => [],
         'panels' => [
             'calls' => ['total', 'successful', 'failed'],
@@ -156,7 +157,7 @@ return [
             'skipped' => [['status', '=', 'skipped']],
         ],
         'sortable' => ['total', 'avg', 'p95', 'command', 'last_triggered'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_triggered',
         'search' => ['command'], 'scope' => [],
         'panels' => [
             'tasks' => ['total', 'processed', 'failed', 'skipped'],
@@ -170,7 +171,7 @@ return [
         'extra' => ['connection', 'rw' => 'connection_type'],
         'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_triggered',
         'sortable' => ['total', 'calls', 'avg', 'p95', 'last_triggered'],
-        'default_sort' => '-calls',
+        'default_sort' => '-last_triggered',
         'search' => ['sql_query', 'connection'], 'scope' => ['connection'],
         'panels' => [
             'calls' => ['total'],
@@ -190,7 +191,7 @@ return [
             'failures' => [['event_type', '=', 'failed']],
         ],
         'sortable' => ['total', 'hits', 'misses', 'writes', 'deletes', 'key', 'last_triggered'],
-        'default_sort' => '-total',
+        'default_sort' => '-last_triggered',
         'search' => ['key', 'store'], 'scope' => [],
         // 'failures.delete' has no distinct column in the raw stream (a single
         // 'failed' event_type, no failing-operation flag), so it resolves to 0;
@@ -206,7 +207,7 @@ return [
         'group_by' => ['mailable'], 'label' => 'mailable',
         'duration' => true, 'detail' => true, 'last' => 'created_at', 'last_alias' => 'last_sent',
         'sortable' => ['count', 'avg', 'p95', 'last_sent', 'mailable'],
-        'default_sort' => '-count',
+        'default_sort' => '-last_sent',
         'search' => ['mailable', 'subject'], 'scope' => ['user_id'],
         'panels' => [
             'volume' => ['total'],
@@ -221,7 +222,7 @@ return [
         // channel values collected distinct per group by App\Support\AggregateQuery.
         'collect_distinct' => ['channels' => 'channel'],
         'sortable' => ['count', 'avg', 'p95', 'last_sent', 'notification'],
-        'default_sort' => '-count',
+        'default_sort' => '-last_sent',
         'search' => ['notification', 'channel'], 'scope' => ['user_id'],
         'panels' => [
             'volume' => ['total'],
@@ -259,7 +260,7 @@ return [
     'users' => [
         'source' => 'bespoke',
         'sortable' => ['requests', 'queued_jobs', 'exceptions', 'last_seen', 'user_id'],
-        'default_sort' => '-requests',
+        'default_sort' => '-last_seen',
         'search' => ['user_id'], 'scope' => [],
     ],
 

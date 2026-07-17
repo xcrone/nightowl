@@ -30,6 +30,20 @@ class IndexAggregate
 {
     use AsAction;
 
+    /**
+     * Response-size/render guard, not a query optimization — Postgres has
+     * already aggregated and sorted the whole window before LIMIT truncates.
+     *
+     * It applies after the ORDER BY, so the sort decides which groups survive,
+     * not just their order; it must stay high enough that truncation is
+     * unreachable for a bounded period window. Most keys are capped by the
+     * app's code surface (routes, job classes, …) at dozens to low hundreds —
+     * only cache (key+store) has unbounded cardinality. Pagination is the fix
+     * if a list ever does reach this, since the SPA's count label counts
+     * returned rows.
+     */
+    private const MAX_GROUPS = 1000;
+
     public function authorize(): bool
     {
         return true;
@@ -90,7 +104,7 @@ class IndexAggregate
 
         [$sortCol, $dir] = AggregateQuery::sort($config, $request);
         $rows->orderBy($sortCol, $dir);
-        $rows->limit(200);
+        $rows->limit(self::MAX_GROUPS);
 
         $data = collect($rows->get())->map(fn ($r) => AggregateQuery::normalizeRow((array) $r, $config))->values();
 

@@ -77,6 +77,16 @@ describe('AggregateListPage', () => {
     expect(wrapper.text()).toContain('56')
   })
 
+  // The config default is only worth anything if it reaches the wire: the page
+  // seeds its sort state from cfg.defaultSort, so a cold mount must already ask
+  // the api for newest-first rather than sorting after a first paint.
+  it('sends the resource default sort on the very first fetch, with no interaction', async () => {
+    await mountPage('requests')
+
+    const first = reqCalls()[0]
+    expect(first[1].params.sort).toBe('-last_triggered')
+  })
+
   it('re-fetches with a sort param when a sortable header is clicked', async () => {
     const { wrapper } = await mountPage('requests')
     // P95 is not the default-sorted column, so first click sorts it descending.
