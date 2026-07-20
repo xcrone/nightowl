@@ -141,6 +141,10 @@ final class NightOwlAgentServiceProvider extends ServiceProvider
                 (int) config('nightowl.agent.health_report_interval', 30),
                 (array) config('nightowl.agent.health_report_intervals', []),
                 (string) config('nightowl.database.database', 'nightowl'),
+                enableSqs: (bool) config('nightowl.agent.sqs_enabled', false),
+                sqsQueueUrl: (string) config('nightowl.agent.sqs_queue_url', ''),
+                sqsRegion: (string) config('nightowl.agent.sqs_region', ''),
+                sqsPollIntervalSeconds: (int) config('nightowl.agent.sqs_poll_interval_seconds', 2),
                 drainSpawner: $this->makeDrainSpawner($app),
             );
         });

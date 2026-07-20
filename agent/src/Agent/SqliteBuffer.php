@@ -5,7 +5,7 @@ namespace NightOwl\Agent;
 use PDO;
 use RuntimeException;
 
-final class SqliteBuffer
+final class SqliteBuffer implements RawPayloadAppender
 {
     private PDO $pdo;
 

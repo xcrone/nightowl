@@ -2,6 +2,7 @@
 
 namespace NightOwl\Agent;
 
+use Aws\Sqs\SqsClient;
 use NightOwl\Support\AgentInstanceId;
 use React\Datagram\Socket as DatagramSocket;
 use React\EventLoop\Loop;
@@ -61,6 +62,10 @@ final class AsyncServer
         private array $healthReportIntervals = [],
         private string $tenantId = '',
         private int $drainWorkerCount = 1,
+        private bool $enableSqs = false,
+        private string $sqsQueueUrl = '',
+        private string $sqsRegion = '',
+        private int $sqsPollIntervalSeconds = 2,
         // Optional respawn strategy for drain workers. When set, the forked child
         // calls this instead of running the drain loop in-process — it is expected
         // to pcntl_exec() a fresh PHP interpreter and therefore never return.
@@ -242,6 +247,38 @@ final class AsyncServer
                 }
             }
         });
+
+        // SQS polling — a durable, decoupled alternative front door alongside
+        // the TCP/UDP listeners above. See SqsPoller's docblock for the
+        // message-format decision (shares SqliteBuffer::appendRaw as the sink,
+        // but not PayloadParser's wire-envelope framing).
+        //
+        // Caveat: the AWS SDK's default HTTP handler is synchronous (curl
+        // under the hood). A ReceiveMessage call with WaitTimeSeconds > 0
+        // blocks this entire single-threaded event loop — TCP accepts, UDP
+        // reads, other timers — for up to that duration. $sqsPollIntervalSeconds
+        // is deliberately kept short (default 2s, not SQS's max of 20s) as a
+        // pragmatic v1 tradeoff between poll efficiency and loop
+        // responsiveness. A fully async SQS client is the correct fix if this
+        // graduates past staging validation.
+        if ($this->enableSqs) {
+            $sqsClient = new SqsClient([
+                'region' => $this->sqsRegion,
+                'version' => '2012-11-05',
+            ]);
+            $sqsPoller = new SqsPoller($sqsClient, $this->sqsQueueUrl, waitTimeSeconds: min($this->sqsPollIntervalSeconds, 20));
+
+            $this->loop->addPeriodicTimer($this->sqsPollIntervalSeconds, function () use ($sqsPoller) {
+                if ($this->backPressure) {
+                    return; // same back-pressure gate as the TCP/UDP paths
+                }
+                try {
+                    $sqsPoller->poll($this->buffer);
+                } catch (\Throwable $e) {
+                    error_log("[NightOwl Agent] SQS poll error: {$e->getMessage()}");
+                }
+            });
+        }
 
         // Restart drain workers if they die unexpectedly
         $this->loop->addSignal(SIGCHLD, function () {

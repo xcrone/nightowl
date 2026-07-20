@@ -15,7 +15,8 @@ final class AgentCommand extends Command
         {--host= : The host to listen on}
         {--port= : The port to listen on}
         {--driver= : Server driver (async or sync)}
-        {--sqlite-path= : SQLite buffer file path (required for multi-instance, overrides config)}';
+        {--sqlite-path= : SQLite buffer file path (required for multi-instance, overrides config)}
+        {--sqs-queue-url= : SQS queue URL to poll for telemetry, in addition to TCP/UDP (overrides config, implies sqs_enabled)}';
 
     protected $description = 'Start the NightOwl monitoring agent';
 
@@ -39,6 +40,11 @@ final class AgentCommand extends Command
         // (php artisan config:cache), but CLI options always work.
         if ($this->option('sqlite-path')) {
             config()->set('nightowl.agent.sqlite_path', $this->option('sqlite-path'));
+        }
+
+        if ($this->option('sqs-queue-url')) {
+            config()->set('nightowl.agent.sqs_queue_url', $this->option('sqs-queue-url'));
+            config()->set('nightowl.agent.sqs_enabled', true);
         }
 
         $this->warnOnSchemaDrift();
@@ -133,6 +139,10 @@ final class AgentCommand extends Command
         if (config('nightowl.agent.health_enabled', true)) {
             $healthPort = config('nightowl.agent.health_port', 2409);
             $this->line("Health API: http://{$host}:{$healthPort}/status");
+        }
+
+        if (config('nightowl.agent.sqs_enabled', false)) {
+            $this->line('SQS queue: '.config('nightowl.agent.sqs_queue_url'));
         }
 
         $this->line('Press Ctrl+C to stop.');

@@ -8,6 +8,7 @@
         "php": "^8.2",
         "ext-pdo_pgsql": "*",
         "ext-pdo_sqlite": "*",
+        "aws/aws-sdk-php": "^3.337",
         "laravel/framework": "^11.0|^12.0|^13.0",
         "laravel/nightwatch": "^1.26",
         "react/datagram": "^1.10",

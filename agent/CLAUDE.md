@@ -202,7 +202,7 @@ Every telemetry row carries both:
 
 ## composer.json
 - **Package**: `nightowl/agent`, PHP `^8.2`
-- **Hard requires**: `laravel/framework ^11|^12|^13`, `laravel/nightwatch ^1.26`, `react/{socket,datagram,event-loop}` — `react/http` intentionally excluded (its `psr/http-message ^1.0` pin conflicts with modern Laravel packages)
+- **Hard requires**: `laravel/framework ^11|^12|^13`, `laravel/nightwatch ^1.26`, `react/{socket,datagram,event-loop}` — `react/http` intentionally excluded (its `psr/http-message ^1.0` pin conflicts with modern Laravel packages) — `aws/aws-sdk-php ^3.337` (SQS ingest polling, `AsyncServer`/`SqsPoller` — a durable alternative front door alongside TCP/UDP)
 - **PHP extensions**: `pdo_pgsql`, `pdo_sqlite`
 
 ## Development

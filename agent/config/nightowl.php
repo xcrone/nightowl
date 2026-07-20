@@ -118,6 +118,20 @@ return [
         // Gzip decompression for compressed payloads
         'gzip_enabled' => env('NIGHTOWL_GZIP_ENABLED', true),
 
+        // SQS ingest — a durable buffer between apps and this agent, polled
+        // alongside (not instead of) the TCP/UDP listeners above. Apps publish
+        // batched telemetry to this queue instead of/in addition to sending it
+        // directly over TCP, so agent downtime no longer blocks or loses live
+        // request traffic. See SqsPoller for the poll/appendRaw/delete cycle.
+        'sqs_enabled' => (bool) env('NIGHTOWL_SQS_ENABLED', false),
+        'sqs_queue_url' => env('NIGHTOWL_SQS_QUEUE_URL'),
+        'sqs_region' => env('NIGHTOWL_SQS_REGION', env('AWS_DEFAULT_REGION')),
+        // Kept short (not SQS's max of 20s) so a blocking ReceiveMessage call
+        // doesn't stall the single-threaded event loop's TCP/UDP/timer handling
+        // for too long — see the caveat comment at the timer registration in
+        // AsyncServer::listen().
+        'sqs_poll_interval_seconds' => (int) env('NIGHTOWL_SQS_POLL_INTERVAL_SECONDS', 2),
+
         // Debug: dump every decoded payload as JSONL for upstream record-type
         // inspection. DO NOT enable in production — writes on every ingest.
         // Used to answer "does laravel/nightwatch emit per-event records for
